@@ -145,7 +145,7 @@ function joinRoom(member, roomCode, makeNew) {
     room = {
       code,
       created: Date.now(),
-      paper: member.paper || { bg: '#f2a7b5', edge: 'gold', hue: 210 },
+      paper: { bg: 'white', edge: member.paper && member.paper.edge ? member.paper.edge : 'gold', hue: member.paper ? member.paper.hue : 210, size: member.paper ? member.paper.size : 'B4' },
       strokes: [],
       history: [],
       members: new Map(),
@@ -482,7 +482,8 @@ function handleMessage(conn, msg) {
       if (!room) return;
       // 紙張顏色可以是預設色票的 id（如 sakura），或是任意 #rrggbb
       room.paper = {
-        bg: /^#[0-9a-f]{6}$/i.test(body.bg) || /^[a-z]{3,12}$/i.test(body.bg) ? body.bg : room.paper.bg,
+        // 紙張只有白紙，其他顏色一律忽略
+        bg: 'white',
         edge: ['plain', 'gold', 'laser'].includes(body.edge) ? body.edge : room.paper.edge,
         hue: clampNum(body.hue, 0, 360, room.paper.hue || 210),
       };
@@ -555,6 +556,16 @@ function handleMessage(conn, msg) {
       room.strokes.push(stroke);
       member.strokeCount = room.strokes.length;
       broadcastStroke(room, stroke, conn.sid);
+      break;
+    }
+    case 'clear-all': {
+      // 「重置」：清空整張色紙（房間內所有人都會同步）
+      if (!room) return;
+      if (!room.strokes.length) return;
+      room.strokes = [];
+      for (const mm of room.members.values()) mm.strokeCount = 0;
+      broadcast(room, { t: 'cleared', by: member.id, name: member.name });
+      systemMessage(room, `${member.name} 重置了整張色紙`);
       break;
     }
     case 'clear': {

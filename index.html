@@ -38,8 +38,8 @@
 
       <div class="scroll-area">
         <section class="section">
-          <h2 class="section-title">① 選一張色紙</h2>
-          <div class="paper-grid" id="paperGrid" role="listbox" aria-label="色紙顏色"></div>
+          <h2 class="section-title">① 白紙</h2>
+          <div class="paper-grid paper-grid-single" id="paperGrid" role="listbox" aria-label="紙張"></div>
         </section>
 
         <section class="section">
@@ -164,6 +164,7 @@
               <span id="colorWellFill"></span>
             </label>
             <div class="recent" id="recentColors"></div>
+            <button class="btn btn-ghost btn-sm picker-btn" id="pickerBtn" title="自選顏色 / 輸入色碼 (P)">🎨 自選</button>
           </div>
         </div>
         <div class="dock-divider"></div>
@@ -270,6 +271,40 @@
       <footer class="modal-foot">
         <button class="btn btn-ghost" data-close="exchangeModal">取消</button>
         <button class="btn btn-primary" id="exchangeSendBtn" disabled>送出交換請求</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- 自選顏色 -->
+  <div class="modal" id="pickerModal" hidden>
+    <div class="modal-backdrop" data-close="pickerModal"></div>
+    <div class="modal-card modal-sm" role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
+      <header class="modal-head">
+        <h2 id="pickerTitle">自選顏色</h2>
+        <button class="icon-btn" data-close="pickerModal" aria-label="關閉">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="picker-preview-wrap">
+          <span class="picker-preview" id="pickerPreview"></span>
+          <div class="picker-info">
+            <b id="pickerName">自訂顏色</b>
+            <small id="pickerHex">#000000</small>
+          </div>
+        </div>
+        <label class="field">
+          <span>直接輸入色碼（例如 #E8747C 或 E8747C）</span>
+          <input type="text" id="pickerHexInput" maxlength="7" placeholder="#E8747C" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="field">
+          <span>或用系統調色盤</span>
+          <input type="color" id="pickerNative" class="picker-native" value="#000000" />
+        </label>
+        <p class="hint" id="pickerHint">提示：燙金筆用金色系最亮眼；鉛筆選炭黑再加粗就是炭筆。</p>
+        <div class="picker-presets" id="pickerPresets"></div>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn btn-ghost" data-close="pickerModal">取消</button>
+        <button class="btn btn-primary" id="pickerApply">使用這個顏色</button>
       </footer>
     </div>
   </div>

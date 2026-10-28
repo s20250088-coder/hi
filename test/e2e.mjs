@@ -107,13 +107,13 @@ await test('五種筆都能過伺服器（鉛筆/水彩/螢光筆/原子筆/燙�
   }
 });
 
-await test('紙張設定（燙金/雷射/底色）同步', async () => {
+await test('紙張工藝（燙金/燙雷射）與色相同步', async () => {
   clearInbox(bob);
   send(alice, 'paper', { bg: 'mizu', edge: 'laser', hue: 123, size: 'B4' });
   const got = await waitFor(bob, 'paper');
   assert.equal(got.paper.edge, 'laser');
-  assert.equal(got.paper.bg, 'mizu');
   assert.equal(got.paper.hue, 123);
+  assert.equal(got.paper.bg, 'white', '底色一律是白紙');
 });
 
 await test('聊天訊息送到房間，並記錄歷史', async () => {
@@ -188,6 +188,14 @@ await test('橡皮擦/清空只刪自己的筆畫', async () => {
   assert.deepEqual(erased.ids, ['t-pencil']);
 });
 
+await test('紙張一律是白紙（送其他顏色也會被忽略）', async () => {
+  clearInbox(bob);
+  send(alice, 'paper', { bg: '#ff0000', edge: 'plain', hue: 30 });
+  const got = await waitFor(bob, 'paper');
+  assert.equal(got.paper.bg, 'white');
+  assert.equal(got.paper.edge, 'plain');
+});
+
 await test('游標位置廣播給其他人（不含自己）', async () => {
   clearInbox(bob);
   send(alice, 'cursor', { x: { x: 0.42, y: 0.58 } });
@@ -239,6 +247,32 @@ await test('重新連線可回到原本的房間（60 秒保留期）', async ()
   assert.equal(joined.rejoin, true);
   assert.ok(joined.room.strokes.length > 0, '回來後仍有大家的筆跡');
   ws.close();
+});
+
+await test('「重置」會清空整張色紙並通知房間裡的人', async () => {
+  // 先確保紙上還有東西（前面的 undo / 清空可能已經把筆跡清光）
+  // 同一張紙的兩個人在這裡是 Alice 和 Eve（Bob 已離開），所以用 Eve 收訊息
+  const carol = client('Carol');
+  await carol.open();
+  send(carol, 'join-room', { code: roomCode });
+  await waitFor(carol, 'joined');
+  await waitFor(alice, 'member-joined');
+  send(alice, 'stroke', { stroke: { id: 'reset-me', tool: 'pen', color: '#123456', size: 5, alpha: 1, points: [0.1, 0.1, 0.2, 0.2], paperW: 534 } });
+  await waitFor(carol, 'stroke');
+  clearInbox(carol);
+  send(alice, 'clear-all');
+  const cleared = await waitFor(carol, 'cleared');
+  assert.equal(cleared.name, 'Alice');
+  carol.close();
+  await waitFor(alice, 'member-left');
+  // 新的加入者看到的是空的紙
+  const eve = client('Eve');
+  await eve.open();
+  send(eve, 'join-room', { code: roomCode });
+  const joined = await waitFor(eve, 'joined');
+  assert.equal(joined.room.strokes.length, 0, '重置後房間應該是空的');
+  eve.close();
+  await waitFor(alice, 'member-left');
 });
 
 await test('同一 memberId 從新連線登入會踢掉舊連線', async () => {

@@ -144,28 +144,12 @@
     CD: { w: 720, h: 720, label: '卡片' },
   };
 
-  const PAPERS = [
-    { id: 'sakura', c1: '#fbd1d9', c2: '#f3a9b9', name: '櫻花粉' },
-    { id: 'peach', c1: '#fde3cf', c2: '#f7c4a1', name: '蜜桃橘' },
-    { id: 'lemon', c1: '#fdf0b5', c2: '#f4dc74', name: '月光黃' },
-    { id: 'matcha', c1: '#ddebc8', c2: '#bcd5a0', name: '抹茶綠' },
-    { id: 'mizu', c1: '#d4eaf4', c2: '#a9cfdf', name: '水色藍' },
-    { id: 'lilac', c1: '#e5ddf5', c2: '#c9bbe8', name: '薰衣草' },
-    { id: 'beige', c1: '#f6eedf', c2: '#e8d7bb', name: '米白' },
-    { id: 'coral', c1: '#f9c0b4', c2: '#eb9688', name: '珊瑚' },
-    { id: 'sage', c1: '#cfe0d6', c2: '#a9c4b5', name: '灰綠' },
-    { id: 'sky', c1: '#cfe1f7', c2: '#a4c3e8', name: '晴空藍' },
-    { id: 'rose', c1: '#f5c9cf', c2: '#e29aa6', name: '玫瑰' },
-    { id: 'cream', c1: '#fbf4e4', c2: '#f0e2c6', name: '奶油' },
-    { id: 'teal', c1: '#c3e3df', c2: '#8fc6bf', name: '薄荷' },
-    { id: 'apricot', c1: '#fde2c0', c2: '#f6c083', name: '杏仁' },
-    { id: 'graphite', c1: '#dfe1e6', c2: '#bfc4cd', name: '霧灰' },
-    { id: 'night', c1: '#4d4f7a', c2: '#2f3154', name: '夜藍' },
-    { id: 'ink', c1: '#3d3a42', c2: '#242229', name: '墨黑' },
-    { id: 'moss', c1: '#cfd9bf', c2: '#a9b893', name: '苔綠' },
-    { id: 'linen', c1: '#efe6d8', c2: '#dccdb8', name: '亞麻' },
-    { id: 'lotus', c1: '#f4e3ef', c2: '#e3c3db', name: '藕粉' },
-  ];
+  // 只提供白紙（紙張本身不再變色；燙金 / 燙雷射的邊框仍然保留）
+  const WHITE_PAPER = { id: 'white', c1: '#fdfcf9', c2: '#f2ede3', name: '白紙' };
+  const PAPERS = [WHITE_PAPER];
+  const LEGACY_PAPER_IDS = ['sakura', 'peach', 'lemon', 'matcha', 'mizu', 'lilac', 'beige', 'coral', 'sage', 'sky',
+    'rose', 'cream', 'teal', 'apricot', 'graphite', 'night', 'ink', 'moss', 'linen', 'lotus', ''];
+
 
   // 站台設定：GitHub Pages 版由 scripts/build-pages.mjs 產生 app.config.js
   // apiBase    → 聯機 / 交換色紙用的雲端 WebSocket 伺服器（空字串 = 只有本機伺服器）
@@ -189,6 +173,31 @@
     '#4f86d9', '#2c4a9e', '#9a7be0', '#c9a7f0', '#8b5a3c', '#c67b5c',
   ];
 
+  // 色碼 → 好看的名字（最近似者），讓自選顏色也有名字
+  const COLOR_NAMES = [
+    ['#1d1c2b', '墨黑'], ['#4a4a55', '石墨灰'], ['#ffffff', '純白'], ['#e8747c', '珊瑚紅'], ['#d24a5b', '朱紅'],
+    ['#a8325a', '胭脂'], ['#f2a86f', '杏橙'], ['#e8c269', '燙金'], ['#f5e07a', '檸檬黃'], ['#8fbf6a', '草綠'],
+    ['#2f8f7a', '孔雀綠'], ['#6fc3c9', '水藍'], ['#4f86d9', '晴空藍'], ['#2c4a9e', '群青'], ['#9a7be0', '薰衣草'],
+    ['#c9a7f0', '丁香紫'], ['#8b5a3c', '可可棕'], ['#c67b5c', '陶土'], ['#f6d0d8', '櫻花'], ['#bcd5a0', '抹茶'],
+    ['#a9cfdf', '霧藍'], ['#e3c3db', '藕粉'], ['#3d3a42', '炭黑'], ['#c9a227', '古金'],
+  ];
+  function colorName(hex) {
+    const [r, g, b] = hexToRgb(hex);
+    let best = '自訂顏色';
+    let bestD = Infinity;
+    for (const [c, name] of COLOR_NAMES) {
+      const [r2, g2, b2] = hexToRgb(c);
+      const d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
+      if (d < bestD) { bestD = d; best = name; }
+    }
+    return bestD < 900 ? best : '自訂顏色';
+  }
+  const normalizeHex = (v) => {
+    let t = String(v || '').trim().replace(/^#/, '').toLowerCase();
+    if (/^[0-9a-f]{3}$/.test(t)) t = t.split('').map((c) => c + c).join('');
+    return /^[0-9a-f]{6}$/.test(t) ? '#' + t : null;
+  };
+
   const QUICK_EMOJIS = ['😊', '😂', '✨', '🎉', '🎁', '💖', '🌸', '🔥', '👍', '😮', '🎨', '🖌️', '🦋', '⭐'];
 
   const state = {
@@ -204,7 +213,7 @@
       eraser: { size: 26, alpha: 1 },
     },
     recent: [],
-    paper: { preset: 'sakura', bg: '#fbd1d9', edge: 'gold', hue: 210, size: 'B4' },
+    paper: { bg: 'white', edge: 'gold', hue: 210, size: 'B4' },
     strokes: [],       // { id, tool, color, size, alpha, points: Float32Array, by }
     undone: [],        // 自己復原的筆畫，可重做
     pending: [],       // 離線時待送出的操作
@@ -232,6 +241,7 @@
     'fitBtn', 'exchangeOpenBtn', 'saveBtn', 'themeBtn', 'themeLabel', 'createRoomBtn', 'canvasWrap', 'paperHost', 'paperCanvas', 'fxSoft', 'fxCanvas', 'inkCanvas',
     'cursorLayer', 'landing', 'landingNew', 'landingRoom', 'landingNote', 'selBar', 'toolGroup', 'swatches',
     'colorInput', 'colorWellFill', 'recentColors', 'sizeInput', 'sizeOut', 'alphaInput', 'alphaOut',
+    'pickerBtn', 'pickerModal', 'pickerPreview', 'pickerName', 'pickerHex', 'pickerHexInput', 'pickerNative', 'pickerPresets', 'pickerApply',
     'chatBadge', 'galleryBadge', 'roomCardTitle', 'roomCardDesc', 'roomForm', 'joinCodeInput', 'joinBtn',
     'roomActions', 'copyCodeBtn', 'leaveRoomBtn', 'roomShare', 'shareLinkInput', 'copyShareBtn',
     'peerCount', 'peopleList', 'incomingBox', 'incomingCount', 'incomingList', 'chatLog', 'chatEmpty',
@@ -247,7 +257,7 @@
   const paperCache = new Map();
 
   function paperOf(b) {
-    return PAPERS.find((p) => p.id === b) || PAPERS[0];
+    return WHITE_PAPER;
   }
 
   /** 底色（含紙紋） */
@@ -1433,6 +1443,8 @@
     const r = draw.stroke ? draw.stroke.size / 2 : currentStyle().size / 2;
     const hit = [];
     for (const s of state.strokes) {
+      // 橡皮擦只抹得掉自己畫的筆跡，別人的畫不能不小心被擦掉
+      if (s.by !== state.self.id) continue;
       if (draw.erased.includes(s.id)) continue;
       const pts = s.points;
       // s.size 是 CSS 像素，這裡換算成和 p 相同的正規化單位
@@ -1828,6 +1840,14 @@
           if (msg.stroke.tool === 'watercolor') spikeEdge(0.6);
         }
         break;
+      case 'cleared':
+        state.strokes = [];
+        state.undone = [];
+        state.dirty = true;
+        updateProgress();
+        hideSelection();
+        toast(`${msg.name || '夥伴'} 重置了這張色紙`);
+        break;
       case 'erased': {
         const set = new Set(msg.ids);
         state.strokes = state.strokes.filter((s) => !set.has(s.id));
@@ -1980,9 +2000,11 @@
   /* ---- 左側：色紙 ---- */
   function renderPaperGrid() {
     els.paperGrid.innerHTML = '';
-    for (const p of PAPERS) {
+    // 只使用白紙：不再提供其他顏色的色紙
+    const p = paperOf(state.paper.bg);
+    if (p) {
       const b = document.createElement('button');
-      b.className = 'paper-chip' + (state.paper.bg === p.id ? ' active' : '');
+      b.className = 'paper-chip' + ' active';
       b.style.setProperty('--c1', p.c1);
       b.style.setProperty('--c2', p.c2);
       b.dataset.id = p.id;
@@ -1991,7 +2013,6 @@
       b.setAttribute('role', 'option');
       b.setAttribute('aria-label', p.name);
       b.innerHTML = `<span class="sheet"></span>` + (state.paper.edge !== 'plain' ? `<span class="flag">${state.paper.edge === 'gold' ? '金' : '雷'}</span>` : '');
-      b.addEventListener('click', () => selectPaper(p.id));
       els.paperGrid.appendChild(b);
     }
     $('.paper-chip-label')?.remove();
@@ -1999,29 +2020,6 @@
     lbl.className = 'paper-chip-label';
     lbl.textContent = `${paperOf(state.paper.bg).name} · ${PAPER_SIZES[state.paper.size].label}`;
     els.paperGrid.appendChild(lbl);
-  }
-
-  function selectPaper(id) {
-    if (state.paper.bg === id) return;
-    state.paper.bg = id;
-    $$('.paper-chip').forEach((el) => el.classList.toggle('active', el.dataset.id === id));
-    $$('.paper-chip .flag').forEach((el) => el.remove());
-    if (state.paper.edge !== 'plain') {
-      const active = $('.paper-chip.active');
-      if (active) active.insertAdjacentHTML('beforeend', `<span class="flag">${state.paper.edge === 'gold' ? '金' : '雷'}</span>`);
-    }
-    const lbl = $('.paper-chip-label');
-    if (lbl) lbl.textContent = `${paperOf(id).name} · ${PAPER_SIZES[state.paper.size].label}`;
-    savePaper();
-    renderPaper();
-    buildSparks(state.render.W, state.render.H, state.paper, state.render.rad);
-    renderFx(state.t);
-    pushPaper();
-    // 換紙時給一點小小的動畫
-    els.paperHost.animate(
-      [{ transform: 'scale(0.985)' }, { transform: 'scale(1)' }],
-      { duration: 260, easing: 'cubic-bezier(.2,.8,.3,1.2)' }
-    );
   }
 
   function selectEdge(edge) {
@@ -2056,10 +2054,7 @@
     els.edgeHue.value = state.paper.hue;
     els.hueOut.textContent = Math.round(state.paper.hue) + '°';
     savePaper();
-    if (changed) {
-      layout();
-      renderPaperGrid();
-    }
+    if (changed) layout();
     if (byName) spikeEdge(2);
   }
 
@@ -2136,6 +2131,55 @@
     }
   }
 
+  /* ---- 自選顏色 ---- */
+  let pickerHex = '#000000';
+  function refreshPicker(hex) {
+    pickerHex = hex;
+    els.pickerPreview.style.background = hex;
+    els.pickerPreview.style.setProperty('--c', hex);
+    els.pickerName.textContent = colorName(hex);
+    els.pickerHex.textContent = hex.toUpperCase();
+    els.pickerHexInput.value = hex.toUpperCase();
+    els.pickerNative.value = hex;
+    $$('.swatch').forEach((el) => el.classList.toggle('active', el.dataset.color === hex));
+  }
+  function openColorPicker() {
+    const start = /^#[0-9a-f]{6}$/i.test(state.color) ? state.color.toLowerCase() : '#000000';
+    refreshPicker(start);
+    els.pickerPresets.innerHTML = '';
+    for (const c of SWATCHES.concat(['#e8c269', '#d4af37', '#f0c55a', '#b8860b'])) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.style.background = c;
+      b.title = colorName(c) + ' ' + c;
+      b.addEventListener('click', () => refreshPicker(c));
+      els.pickerPresets.appendChild(b);
+    }
+    openModal('pickerModal');
+    setTimeout(() => els.pickerHexInput.select(), 60);
+  }
+  function applyPickedColor() {
+    const typed = normalizeHex(els.pickerHexInput.value);
+    const hex = typed || normalizeHex(pickerHex) || '#000000';
+    setColor(hex);
+    closeModal('pickerModal');
+    toast(`已選用「${colorName(hex)}」${hex.toUpperCase()}`);
+  }
+  function bindColorPicker() {
+    els.pickerBtn.addEventListener('click', openColorPicker);
+    els.pickerHexInput.addEventListener('input', () => {
+      const v = els.pickerHexInput.value.trim();
+      els.pickerHexInput.classList.toggle('invalid', !!v && !normalizeHex(v));
+      const hex = normalizeHex(v);
+      if (hex) refreshPicker(hex);
+    });
+    els.pickerHexInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); applyPickedColor(); }
+    });
+    els.pickerNative.addEventListener('input', () => refreshPicker(els.pickerNative.value));
+    els.pickerApply.addEventListener('click', applyPickedColor);
+  }
+
   function renderSwatches() {
     els.swatches.innerHTML = '';
     for (const c of SWATCHES) {
@@ -2153,6 +2197,11 @@
     const r = STORE.get('recent', []);
     state.recent = Array.isArray(r) ? r.slice(0, 5) : [];
     renderRecent();
+    bindColorPicker();
+    els.colorWellFill.parentElement.addEventListener('click', (e) => {
+      // 點色塊本身除了開系統調色盤，也順便記住「自選」是按鈕流程
+      void e;
+    });
   }
 
   function renderRecent() {
@@ -2421,11 +2470,17 @@
     });
     els.joinConfirmBtn.addEventListener('click', joinFromModal);
     els.themeBtn.addEventListener('click', toggleTheme);
-    els.createRoomBtn.addEventListener('click', () => {
+    els.createRoomBtn.addEventListener('click', async () => {
+      // 純靜態版（GitHub Pages）沒有伺服器可以開房間，先清楚告訴使用者
+      if (!HAS_BACKEND) { backendMissing(); return; }
       if (state.room) {
         if (!confirm('你已經在房間裡了，要離開並建立新的雙人房間嗎？')) return;
-        if (state.conn.status === 'online') wsSend('leave-room');
-        else onLeftRoom();
+        if (state.conn.status === 'online') {
+          wsSend('leave-room');
+          await new Promise((r) => setTimeout(r, 250));
+        } else {
+          onLeftRoom();
+        }
       }
       state.pendingJoin = '';
       createRoomFlow();
@@ -2434,12 +2489,39 @@
       els.joinCodeInput.value = els.joinCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
     });
     if (els.chatJoinBtn) els.chatJoinBtn.addEventListener('click', () => openJoinModal());
-    els.fitBtn.addEventListener('click', () => {
-      layout();
-      hideLanding();
-    });
+    els.fitBtn.addEventListener('click', resetCanvas);
     els.nickInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinFromModal(); });
     els.joinCodeInput2.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinFromModal(); });
+  }
+
+  /** 重置：清空畫布上所有筆跡、把選取 / 搬移等狀態歸零，工具列立刻可以再畫 */
+  function resetCanvas() {
+    const n = state.strokes.length;
+    if (n && !confirm(`要把這張色紙上的 ${n} 筆全部清掉，重新開始嗎？`)) return;
+    // 中斷進行中的繪畫 / 搬移 / 框選
+    draw.active = false;
+    draw.stroke = null;
+    draw.pointerId = null;
+    draw.erased = null;
+    liveBuf.clear();
+    state.selection.ids = null;
+    state.selection.moving = false;
+    state.selection.start = null;
+    els.selBar.classList.remove('show');
+    state.strokes = [];
+    state.undone = [];
+    state.pending = [];
+    state.dirty = true;
+    hideSelection();
+    els.inkCanvas.style.cursor = state.tool === 'eraser' ? 'cell' : 'crosshair';
+    updateProgress();
+    updateUndoButtons();
+    // 通知房間裡的人一起清空
+    if (state.room && state.conn.status === 'online') wsSend('clear-all');
+    else state.pending.push({ t: 'clear-all', body: {} });
+    layout();
+    hideLanding();
+    toast('已重置畫布，可以重新開始了');
   }
 
   async function copyShareLink() {
@@ -2507,6 +2589,7 @@
   function createRoomFlow() {
     if (!HAS_BACKEND) { backendMissing(); return; }
     if (!state.self.name) { openJoinModal(); return; }
+    state.pendingJoin = '';
     state.conn.joining = 'new';
     els.landingNote.textContent = '正在開房間…';
     connect({
@@ -3061,6 +3144,7 @@
       else if (e.key === '4') setTool('pen');
       else if (e.key === '5') setTool('eraser');
       else if (e.key === '6') setTool('goldpen');
+      else if (e.key === 'p' || e.key === 'P') { e.preventDefault(); openColorPicker(); }
       else if (e.key === '[' || e.key === ']') {
         const o = state.toolOpts[state.tool];
         o.size = clamp(o.size + (e.key === ']' ? 1 : -1), 1, 40);
@@ -3113,7 +3197,7 @@
     const savedPaper = STORE.get('paper', null);
     if (savedPaper && typeof savedPaper === 'object') state.paper = { ...state.paper, ...savedPaper };
     if (!PAPER_SIZES[state.paper.size]) state.paper.size = 'B4';
-    if (!PAPERS.some((p) => p.id === state.paper.bg)) state.paper.bg = 'sakura';
+    state.paper.bg = WHITE_PAPER.id;
     state.tool = STORE.get('tool', 'pen');
     if (!TOOLS[state.tool]) state.tool = 'pen';
     const savedOpts = STORE.get('toolOpts', null);
