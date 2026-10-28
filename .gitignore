@@ -1,0 +1,8 @@
+# GitHub Pages 建置輸出
+dist/
+
+# 執行時產生的資料（收到的交換色紙）
+data/
+
+node_modules/
+.DS_Store

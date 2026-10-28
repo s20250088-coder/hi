@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="theme-init.js"></script>
+  <script src="app.config.js"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- ============ 左側：色紙選擇 ============ -->
+    <aside class="panel panel-left" id="leftPanel">
+      <header class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 40 40" aria-hidden="true">
+            <defs>
+              <linearGradient id="brandGold" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#fff6c2" />
+                <stop offset=".35" stop-color="#e9c46a" />
+                <stop offset=".6" stop-color="#b8860b" />
+                <stop offset=".85" stop-color="#ffe9a3" />
+                <stop offset="1" stop-color="#c9a227" />
+              </linearGradient>
+            </defs>
+            <rect x="4" y="4" width="32" height="32" rx="3" fill="#f37a86" stroke="url(#brandGold)" stroke-width="3" />
+            <path d="M12 25c3-8 6-8 8-3s5 5 8-2" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div>
+          <h1>彩紙屋</h1>
+          <p>燙金 · 雷射 · 一起畫</p>
+        </div>
+      </header>
+
+      <div class="scroll-area">
+        <section class="section">
+          <h2 class="section-title">① 選一張色紙</h2>
+          <div class="paper-grid" id="paperGrid" role="listbox" aria-label="色紙顏色"></div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">② 紙邊工藝</h2>
+          <div class="edge-options" id="edgeOptions" role="radiogroup" aria-label="紙邊工藝">
+            <button class="edge-card" data-edge="plain" role="radio" aria-checked="false">
+              <span class="edge-swatch edge-plain"></span>
+              <span class="edge-name">素邊</span>
+              <span class="edge-desc">樸素的手工感</span>
+            </button>
+            <button class="edge-card" data-edge="gold" role="radio" aria-checked="true">
+              <span class="edge-swatch edge-gold"></span>
+              <span class="edge-name">燙金邊</span>
+              <span class="edge-desc">金光閃耀</span>
+            </button>
+            <button class="edge-card" data-edge="laser" role="radio" aria-checked="false">
+              <span class="edge-swatch edge-laser"><i></i></span>
+              <span class="edge-name">燙雷射邊</span>
+              <span class="edge-desc">幻彩折射</span>
+            </button>
+          </div>
+          <div class="hue-row" id="hueRow">
+            <label for="edgeHue">雷射色相 <output id="hueOut">210°</output></label>
+            <input type="range" id="edgeHue" min="0" max="360" step="1" value="210" />
+            <button class="btn btn-ghost btn-sm" id="hueShiftBtn" title="讓雷射邊慢慢流動變色">▶ 流動</button>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">③ 完成度</h2>
+          <div class="progress-row">
+            <div class="progress"><i id="progressBar"></i></div>
+            <span id="progressText">0 筆</span>
+          </div>
+          <p class="hint">每畫一筆，邊框的火花就會更熱鬧一點。</p>
+        </section>
+      </div>
+
+      <footer class="panel-foot">
+        <button class="btn btn-ghost" id="undoBtn" title="復原 (Ctrl+Z)">↶ 復原</button>
+        <button class="btn btn-ghost" id="redoBtn" title="重做 (Ctrl+Shift+Z)">↷ 重做</button>
+        <button class="btn btn-ghost" id="clearBtn" title="清空自己的筆跡">✕ 清空</button>
+      </footer>
+    </aside>
+
+    <!-- ============ 中間：畫布 ============ -->
+    <main class="stage">
+      <div class="stage-top">
+        <div class="room-chip" id="roomChip">
+          <span class="dot" id="connDot"></span>
+          <span id="roomLabel">離線模式</span>
+          <span class="room-id" id="roomIdLabel" hidden></span>
+          <button class="chip-btn" id="copyLinkBtn" hidden title="複製邀請連結">🔗</button>
+        </div>
+        <div class="stage-tools">
+          <button class="btn btn-ghost btn-sm" id="themeBtn" title="切換深色 / 淺色模式" aria-label="切換深色 / 淺色模式">
+            <span class="theme-ico" aria-hidden="true"></span><span id="themeLabel">深色</span>
+          </button>
+          <button class="btn btn-ghost btn-sm" id="fitBtn" title="重置視角">⤢ 重置</button>
+          <button class="btn btn-sm" id="exchangeOpenBtn">🎁 交換色紙</button>
+          <button class="btn btn-ghost btn-sm" id="saveBtn">⬇ 存圖</button>
+        </div>
+      </div>
+
+      <div class="canvas-wrap" id="canvasWrap">
+        <div class="paper-host" id="paperHost">
+          <canvas id="paperCanvas" class="paper-canvas" aria-label="色紙畫布"></canvas>
+          <canvas id="fxSoft" class="fx-canvas fx-soft" aria-hidden="true"></canvas>
+          <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
+          <canvas id="inkCanvas" class="ink-canvas" aria-label="繪圖畫布"></canvas>
+          <div class="cursor-layer" id="cursorLayer"></div>
+        </div>
+        <div class="landing" id="landing">
+          <div class="landing-card">
+            <p class="landing-kicker">歡迎來到彩紙屋</p>
+            <h2>選一張色紙，<br />開始燙金與彩繪</h2>
+            <p class="landing-text">這裡的色紙邊緣會發光。找朋友一起<b>聯機</b>，用同一張纸畫畫、聊天，再把成品<b>交換</b>到對方的收藏裡。</p>
+            <div class="landing-actions">
+              <button class="btn btn-primary btn-lg" id="landingNew">自己畫</button>
+              <button class="btn btn-lg" id="landingRoom">和朋友一起畫</button>
+            </div>
+            <p class="landing-note" id="landingNote"></p>
+          </div>
+        </div>
+        <div class="sel-bar" id="selBar"></div>
+        <div class="toast-wrap" id="toastWrap"></div>
+      </div>
+
+      <div class="dock" role="toolbar" aria-label="畫筆工具">
+        <div class="dock-group" id="toolGroup">
+          <button class="tool" data-tool="pencil" aria-pressed="false" title="鉛筆 (1)">
+            <svg viewBox="0 0 24 24"><path d="M4 20l3.2-.7L19 7.5 16.5 5 4.7 16.8 4 20z" /><path d="M14.5 7l2.5 2.5" /></svg>
+            <span>鉛筆</span>
+          </button>
+          <button class="tool" data-tool="watercolor" aria-pressed="false" title="水彩 (2)">
+            <svg viewBox="0 0 24 24"><path d="M12 3c-3.6 4.4-6 7.3-6 10.2A6 6 0 0 0 18 13.2C18 10.3 15.6 7.4 12 3z" /><path d="M9.4 13.6a2.7 2.7 0 0 0 2.6 3.2" /></svg>
+            <span>水彩</span>
+          </button>
+          <button class="tool" data-tool="highlight" aria-pressed="false" title="螢光筆 (3)">
+            <svg viewBox="0 0 24 24"><path d="M15 3l6 6-9.5 9.5H5.5L4 15.5 15 3z" /><path d="M9 9l6 6" /></svg>
+            <span>螢光筆</span>
+          </button>
+          <button class="tool" data-tool="pen" aria-pressed="false" title="原子筆 (4)">
+            <svg viewBox="0 0 24 24"><path d="M6 18.5V21h2.5L20 9.5 14.5 4 3 15.5v3z" /><path d="M12 6.5l5.5 5.5" /><circle cx="5.5" cy="18" r=".6" /></svg>
+            <span>原子筆</span>
+          </button>
+          <button class="tool" data-tool="eraser" aria-pressed="false" title="橡皮擦 (5)">
+            <svg viewBox="0 0 24 24"><path d="M16.5 4.5L21 9l-9 9H7l-3-3L16.5 4.5z" /><path d="M11 9.5l5 5" /><path d="M4 21h16" /></svg>
+            <span>橡皮擦</span>
+          </button>
+        </div>
+        <div class="dock-divider"></div>
+        <div class="dock-colors">
+          <div class="swatches" id="swatches"></div>
+          <div class="color-custom">
+            <label class="color-well" title="自訂顏色">
+              <input type="color" id="colorInput" value="#2b2b2b" />
+              <span id="colorWellFill"></span>
+            </label>
+            <div class="recent" id="recentColors"></div>
+          </div>
+        </div>
+        <div class="dock-divider"></div>
+        <div class="dock-sliders">
+          <label class="slider">
+            <span>筆寬 <output id="sizeOut">4</output></span>
+            <input type="range" id="sizeInput" min="1" max="40" step="1" value="4" />
+          </label>
+          <label class="slider">
+            <span>濃淡 <output id="alphaOut">100%</output></span>
+            <input type="range" id="alphaInput" min="10" max="100" step="5" value="100" />
+          </label>
+        </div>
+      </div>
+    </main>
+
+    <!-- ============ 右側：朋友 / 聊天 / 畫廊 ============ -->
+    <aside class="panel panel-right" id="rightPanel">
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="friends" role="tab" aria-selected="true">夥伴</button>
+        <button class="tab" data-tab="chat" role="tab" aria-selected="false">聊天室 <span class="badge" id="chatBadge" hidden>0</span></button>
+        <button class="tab" data-tab="gallery" role="tab" aria-selected="false">我的畫廊 <span class="badge" id="galleryBadge" hidden>0</span></button>
+      </nav>
+
+      <section class="tab-panel active" data-panel="friends">
+        <div class="room-card">
+          <h3 id="roomCardTitle">聯機一起畫</h3>
+          <p class="muted" id="roomCardDesc">開啟房間後，把邀請連結傳給朋友，就能在同一張色紙上一起畫。</p>
+          <div class="room-form" id="roomForm">
+            <input type="text" id="joinCodeInput" maxlength="6" placeholder="輸入 6 位房間號" autocomplete="off" spellcheck="false" aria-label="房間號" />
+            <button class="btn btn-primary" id="joinBtn">加入</button>
+          </div>
+          <button class="btn btn-block btn-ghost" id="createRoomBtn">＋ 建立雙人房間（每間限 2 人）</button>
+          <div class="room-actions" id="roomActions" hidden>
+            <button class="btn btn-sm" id="copyCodeBtn">📋 複製房間號</button>
+            <button class="btn btn-ghost btn-sm" id="leaveRoomBtn">離開房間</button>
+          </div>
+          <div class="two-person" id="twoPersonNote">🔒 雙人房間：只有拿到房間號的人才能進入，最多 2 個人。</div>
+          <div class="room-share" id="roomShare" hidden>
+            <label>邀請連結</label>
+            <div class="share-row"><input type="text" id="shareLinkInput" readonly /><button class="btn btn-sm" id="copyShareBtn">複製</button></div>
+          </div>
+        </div>
+
+        <h3 class="list-title">在同一個房間的人 <span id="peerCount" class="count">0</span></h3>
+        <ul class="people" id="peopleList"></ul>
+
+        <button class="btn btn-block" id="chatJoinBtn">💬 邊畫邊聊</button>
+
+        <div class="incoming" id="incomingBox" hidden>
+          <h3 class="list-title">交換請求 <span class="count" id="incomingCount">0</span></h3>
+          <ul class="requests" id="incomingList"></ul>
+        </div>
+
+        <div class="tips">
+          <p>💡 每人有專屬顏色游標，畫筆長按可以連線畫出流暢線條。</p>
+          <p>💡 交換色紙後，對方的簽名會留在你的收藏裡。</p>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="chat">
+        <div class="chat-log" id="chatLog">
+          <div class="chat-empty" id="chatEmpty">還沒有人說話。打聲招呼吧！</div>
+        </div>
+        <form class="chat-form" id="chatForm">
+          <div class="quick-emojis" id="quickEmojis"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chatInput" maxlength="300" placeholder="說點什麼…" autocomplete="off" />
+            <button class="btn btn-primary" type="submit">送出</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="tab-panel" data-panel="gallery">
+        <div class="gallery-head">
+          <p class="muted" id="galleryDesc">你與朋友的作品會收藏在這裡，可以隨時拿回來繼續畫。</p>
+        </div>
+        <ul class="gallery-grid" id="galleryGrid"></ul>
+        <div class="gallery-empty" id="galleryEmpty">畫廊還是空的。先完成一張，或和朋友交換一張吧！</div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- 交換色紙彈窗 -->
+  <div class="modal" id="exchangeModal" hidden>
+    <div class="modal-backdrop" data-close="exchangeModal"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="exchangeTitle">
+      <header class="modal-head">
+        <h2 id="exchangeTitle">交換色紙</h2>
+        <button class="icon-btn" data-close="exchangeModal" aria-label="關閉">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="exchange-preview">
+          <div class="preview-wrap" id="exchangePreview"></div>
+          <div class="preview-meta">
+            <p id="exchangeMeta">目前這張色紙</p>
+            <p class="muted" id="exchangeSub">送給朋友後，你會收到一張對方收藏的色紙作為回禮。</p>
+          </div>
+        </div>
+        <h3 class="list-title">送給誰？</h3>
+        <ul class="people selectable" id="exchangePeople"></ul>
+        <p class="hint" id="exchangeHint"></p>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn btn-ghost" data-close="exchangeModal">取消</button>
+        <button class="btn btn-primary" id="exchangeSendBtn" disabled>送出交換請求</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- 暱稱 / 房間設定 -->
+  <div class="modal" id="joinModal" hidden>
+    <div class="modal-backdrop" data-close="joinModal"></div>
+    <div class="modal-card modal-sm" role="dialog" aria-modal="true" aria-labelledby="joinTitle">
+      <header class="modal-head">
+        <h2 id="joinTitle">和朋友一起畫</h2>
+        <button class="icon-btn" data-close="joinModal" aria-label="關閉">✕</button>
+      </header>
+      <div class="modal-body">
+        <label class="field">
+          <span>你的暱稱</span>
+          <input type="text" id="nickInput" maxlength="16" placeholder="例如：小花" />
+        </label>
+        <label class="field" id="joinCodeField">
+          <span>房間代碼（留空就開一間新的）</span>
+          <input type="text" id="joinCodeInput2" maxlength="8" placeholder="ABC123" autocomplete="off" />
+        </label>
+        <p class="hint" id="joinError"></p>
+        <p class="hint" style="margin-top:2px">對方的房間號是 6 位英數字（例如 <b style="color:#f2d48a">K3M7QF</b>），拿到後從右側「夥伴」分頁的「加入」進入。</p>
+      </div>
+      <footer class="modal-foot">
+        <button class="btn btn-ghost" data-close="joinModal">取消</button>
+        <button class="btn btn-primary" id="joinConfirmBtn">連線</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- 收到交換請求 -->
+  <div class="modal" id="incomingModal" hidden>
+    <div class="modal-backdrop" data-close="incomingModal"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="incomingTitle">
+      <header class="modal-head">
+        <h2 id="incomingTitle">收到交換請求</h2>
+        <button class="icon-btn" data-close="incomingModal" aria-label="關閉">✕</button>
+      </header>
+      <div class="modal-body" id="incomingBody"></div>
+      <footer class="modal-foot">
+        <button class="btn btn-ghost" id="declineOfferedBtn">婉拒</button>
+        <button class="btn btn-primary" id="acceptOfferedBtn">收下並回禮</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

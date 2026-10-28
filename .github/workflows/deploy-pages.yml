@@ -1,0 +1,56 @@
+name: Deploy 彩紙屋 to GitHub Pages
+
+# 每次合併（push）到 main 就自動部署；也可以在 Actions 頁面手動執行
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# GitHub Pages 需要的權限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只跑一個部署；新的合併會取代排隊中的舊部署，但不會中斷正在進行的部署
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 建立靜態網站
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 建立 dist/（若有必要，可搭配 repo variable PAGES_BACKEND 指定聯機伺服器）
+        env:
+          PAGES_BACKEND: ${{ vars.PAGES_BACKEND }}
+        run: node scripts/build-pages.mjs
+
+      - name: 設定 GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上傳網站成品
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: 部署到 GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 部署
+        id: deployment
+        uses: actions/deploy-pages@v4
