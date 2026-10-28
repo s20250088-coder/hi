@@ -37,6 +37,9 @@ jobs:
 
       - name: 設定 GitHub Pages
         uses: actions/configure-pages@v5
+        with:
+          # 第一次執行時如果 Pages 還沒啟用，這個步驟會自動幫你開啟（使用 Actions 建置）
+          enablement: true
 
       - name: 上傳網站成品
         uses: actions/upload-pages-artifact@v3
