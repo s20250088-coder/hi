@@ -1180,8 +1180,10 @@
   let ctxPaper, ctxSoft, ctxFx, ctxInk;
 
   function sizeLayer(canvas, W, H, dpr) {
-    canvas.width = W;
-    canvas.height = H;
+    // 只在尺寸真的改變時才重設：canvas.width 一旦被寫入，即使數字相同，
+    // 部分瀏覽器（尤其 headless Chromium）也會把畫布內容清掉
+    if (canvas.width !== W) canvas.width = W;
+    if (canvas.height !== H) canvas.height = H;
     const c = canvas.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     return c;
@@ -1212,6 +1214,11 @@
     const sameSize = state.render && state.render.W === W && state.render.H === H && state.render.dpr === dpr;
     state.render = { dpr, W, H, rad, pad: getPad(rad), cssW: w, cssH: h, live: state.render.live };
     if (!sameSize || !ctxInk) {
+      // 重設畫布尺寸會清空內容：進行中的筆先收好，重畫時才不會消失
+      const live = draw.active && draw.stroke;
+      if (live && draw.stroke.points && draw.stroke.points.length < 2) {
+        draw.stroke.points.push({ x: draw.stroke.points[0].x + 0.0006, y: draw.stroke.points[0].y + 0.0006 });
+      }
       ctxPaper = sizeLayer(els.paperCanvas, W, H, dpr);
       ctxSoft = sizeLayer(els.fxSoft, W, H, dpr);
       ctxFx = sizeLayer(els.fxCanvas, W, H, dpr);
@@ -1443,6 +1450,7 @@
 
   function addPoint(p) {
     const stroke = draw.stroke;
+    if (!stroke) return;
     const W = state.render.cssW;
     const H = state.render.cssH;
     if (draw.tool === 'eraser') {
@@ -1687,6 +1695,13 @@
         sendCursor(p, false);
         return;
       }
+      // 進行中卻沒有筆畫物件（例如剛按過重置）：直接收掉這一筆
+      if (!draw.stroke) {
+        draw.active = false;
+        draw.pointerId = null;
+        sendCursor(p, false);
+        return;
+      }
       // 第一根手指開始畫之後，其他指標的移動一律忽略
       if (draw.pointerId !== null && draw.pointerId !== e.pointerId) return;
       // 只有「真的由瀏覽器產生的同一個指標」才展開合併事件；合成事件沒有座標，不能用
@@ -1697,7 +1712,9 @@
           if (list && list.length) events = list;
         } catch { /* 忽略 */ }
       }
-      for (const ev of events) addPoint(toNorm(ev));
+      for (const ev of events) {
+        try { addPoint(toNorm(ev)); } catch (err) { console.error('addPoint 失敗', err); clearActiveStroke(); break; }
+      }
       setEdgeMotion(p);
       sendCursor(p, false);
     };
@@ -1711,7 +1728,12 @@
       // 放手時只要還在畫就結束這一筆；不要用 pointerId 比對，
       // 否則某些裝置 / 事件的 id 對不上時，整筆就會一直被當成「進行中」而消失。
       if (!draw.active) return;
-      endStroke();
+      try {
+        endStroke();
+      } catch (err) {
+        console.error('結束筆畫時發生錯誤', err);
+        clearActiveStroke();
+      }
       draw.pointerId = null;
     };
     ink.addEventListener('pointerup', up);
@@ -2621,7 +2643,7 @@
       els.joinCodeInput.value = els.joinCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
     });
     if (els.chatJoinBtn) els.chatJoinBtn.addEventListener('click', () => openJoinModal());
-    els.fitBtn.addEventListener('click', resetCanvas);
+    els.fitBtn.addEventListener('click', () => resetCanvas());
     els.nickInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinFromModal(); });
     els.joinCodeInput2.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinFromModal(); });
   }
@@ -2662,18 +2684,34 @@
     }
   }
 
+  /** 把「進行中」的繪畫狀態徹底歸零（重置、離開頁面前都要做，否則之後的指標事件會接到已失效的物件） */
+  function clearActiveStroke() {
+    if (!draw.active && !draw.stroke) return;
+    liveBuf.clear();
+    draw.active = false;
+    draw.stroke = null;
+    draw.pointerId = null;
+    draw.tool = null;
+    draw.erased = null;
+    draw.erasedTouched = false;
+    draw.lastErase = null;
+    draw.last = null;
+    draw.startedAt = 0;
+    state.dirty = true;
+    if (ctxFx) renderFx(state.t);
+  }
+
+  /** 只要橡皮擦可以擦除自己的筆畫，就不會影響其他人的圖層 */
+  function refreshEraserCursor() {
+    els.inkCanvas.style.cursor = state.tool === 'eraser' ? 'cell' : 'crosshair';
+  }
+
   /** 重置：清空畫布上所有筆跡、把選取 / 搬移等狀態歸零，工具列立刻可以再畫 */
   function resetCanvas() {
     const n = state.strokes.length;
     if (n && !confirm(`要把這張色紙上的 ${n} 筆全部清掉，重新開始嗎？`)) return;
     // 中斷進行中的繪畫 / 搬移 / 框選
-    draw.active = false;
-    draw.stroke = null;
-    draw.pointerId = null;
-    draw.erased = null;
-    draw.erasedTouched = false;
-    draw.lastErase = null;
-    liveBuf.clear();
+    clearActiveStroke();
     state.selection.ids = null;
     state.selection.moving = false;
     state.selection.start = null;
@@ -2688,7 +2726,7 @@
     // 立刻把畫布重畫成空白（不等下一幀），避免重畫前又被復原填回舊圖層
     renderInk();
     hideSelection();
-    els.inkCanvas.style.cursor = state.tool === 'eraser' ? 'cell' : 'crosshair';
+    refreshEraserCursor();
     updateProgress();
     updateUndoButtons();
     // 通知房間裡的人一起清空
@@ -3350,9 +3388,10 @@
     const onResize = () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
+        // 只在真的不忙的時候重排；重排會重設畫布尺寸，重設尺寸等於是清掉畫布內容
         layout();
         updateRemoteCursors();
-      }, 120);
+      }, 300);
     };
     window.addEventListener('resize', onResize);
     if (window.ResizeObserver) new ResizeObserver(onResize).observe(els.canvasWrap);
