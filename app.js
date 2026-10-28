@@ -794,11 +794,18 @@
     const H = ctx.canvas.height;
     const lw = Math.max(0.6, size);
     ctx.save();
-    // 防禦：重設裁切區與濾鏡，避免先前哪一筆漏了 restore 就讓之後的筆跡整片消失
+    // 防禦：重設裁切區、濾鏡、陰影與虛線，
+    // 避免先前哪一筆漏了 restore，就讓之後的筆跡整片消失或被陰影蓋住
     ctx.beginPath();
     ctx.rect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.clip();
     ctx.filter = 'none';
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'rgba(0,0,0,0)';
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.globalCompositeOperation = 'source-over';
@@ -1202,11 +1209,17 @@
     els.paperHost.style.aspectRatio = 'auto';
 
     const rad = Math.max(10, Math.round(W * 0.035));
+    const sameSize = state.render && state.render.W === W && state.render.H === H && state.render.dpr === dpr;
     state.render = { dpr, W, H, rad, pad: getPad(rad), cssW: w, cssH: h, live: state.render.live };
-    ctxPaper = sizeLayer(els.paperCanvas, W, H, dpr);
-    ctxSoft = sizeLayer(els.fxSoft, W, H, dpr);
-    ctxFx = sizeLayer(els.fxCanvas, W, H, dpr);
-    ctxInk = sizeLayer(els.inkCanvas, W, H, dpr);
+    if (!sameSize || !ctxInk) {
+      ctxPaper = sizeLayer(els.paperCanvas, W, H, dpr);
+      ctxSoft = sizeLayer(els.fxSoft, W, H, dpr);
+      ctxFx = sizeLayer(els.fxCanvas, W, H, dpr);
+      ctxInk = sizeLayer(els.inkCanvas, W, H, dpr);
+    } else {
+      // 尺寸沒變就只重設轉換，不要重設 canvas.width（那會把整張畫布清掉）
+      for (const c of [ctxPaper, ctxSoft, ctxFx, ctxInk]) c && c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
     buildSparks(W, H, state.paper, rad);
     renderPaper();
     renderInk();
@@ -1238,12 +1251,21 @@
 
   /** 把正規化座標（0~1）的筆畫實際畫到墨跡圖層上；例外：用來找問題的除錯開關 */
   function paintStrokesToInk(exceptLive) {
+    // 每完成一整輪重畫，都要把繪圖狀態歸零，下一個筆畫才不會被殘留的濾鏡 / 透明度影響
+    resetPaintCtxOnce();
     for (const st of state.strokes) {
       const { cssW, cssH } = state.render;
       const px = st.points.map((p) => ({ x: p.x * cssW, y: p.y * cssH }));
       paintStroke(ctxInk, px, st.tool, st.color, st.size, st.alpha, strokeSeed(st.id));
     }
     for (const l2 of liveBuf.values()) if (l2 !== exceptLive) paintLive(l2);
+  }
+
+  let ctxResetNeeded = false;
+  function resetPaintCtxOnce() {
+    if (!ctxResetNeeded) return;
+    ctxResetNeeded = false;
+    resetPaintCtx();
   }
 
   /** 紙上有燙金筆的線條嗎？（金粉會隨時間閃爍，需要每幀重畫） */
@@ -1384,7 +1406,9 @@
     if (state.tool === 'eraser') {
       draw.active = true;
       draw.tool = 'eraser';
-      draw.erased = [];
+      draw.erased = null;
+      draw.erasedTouched = false;
+      draw.lastErase = null;
       draw.last = p;
       draw.stroke = { id: uid('e'), tool: 'eraser', pts: [{ x: p.x * state.render.cssW, y: p.y * state.render.cssH }], size: cssSize, painted: 0 };
       liveBuf.set(draw.stroke.id, draw.stroke);
@@ -1439,25 +1463,96 @@
     state.dirty = true;
   }
 
-  function eraseHits(p) {
-    const r = draw.stroke ? draw.stroke.size / 2 : currentStyle().size / 2;
-    const hit = [];
-    for (const s of state.strokes) {
-      // 橡皮擦只抹得掉自己畫的筆跡，別人的畫不能不小心被擦掉
-      if (s.by !== state.self.id) continue;
-      if (draw.erased.includes(s.id)) continue;
-      const pts = s.points;
-      // s.size 是 CSS 像素，這裡換算成和 p 相同的正規化單位
-      const reach = r + (s.size / 2) / Math.max(64, state.render.cssW) + 0.004;
-      for (let i = 0; i < pts.length; i++) {
-        if (Math.abs(pts[i].x - p.x) < reach && Math.abs(pts[i].y - p.y) < reach) {
-          if (Math.hypot(pts[i].x - p.x, pts[i].y - p.y) <= reach) { hit.push(s.id); break; }
+  /* ---- 局部擦除：只抹掉筆畫經過的地方，線的其餘部分保留 ---- */
+
+  /**
+   * 把一筆切掉橡皮擦掃過的部分。
+   * cut 是「本次擦除」的軌跡（CSS 像素），radius 是橡皮擦半徑。
+   * 回傳一組新筆畫（可能 0 號 ~ 數段），id 都用 `原id#段號`，方便日後還原。
+   */
+  function subtractErase(stroke, cut, radius) {
+    const { cssW, cssH } = state.render;
+    const pts = stroke.points;
+    const lw = stroke.size || 3;
+    if (!cut.length) return [stroke];
+    // 先做粗略包圍盒檢查，擦不到的話直接原樣返回（完全不改動）
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const c of cut) { if (c.x < minX) minX = c.x; if (c.x > maxX) maxX = c.x; if (c.y < minY) minY = c.y; if (c.y > maxY) maxY = c.y; }
+    const rp = radius + lw / 2 + 2;
+    let bHit = false;
+    for (const p of pts) {
+      const x = p.x * cssW, y = p.y * cssH;
+      if (x >= minX - rp && x <= maxX + rp && y >= minY - rp && y <= maxY + rp) { bHit = true; break; }
+    }
+    if (!bHit) return [stroke];
+    const thr = radius + lw * 0.45;
+    const thr2 = thr * thr;
+    // 沿著筆畫的每一小段取樣，標記被擦到的點
+    const removed = new Uint8Array(pts.length);
+    for (let i = 0; i < pts.length; i++) {
+      const ax = pts[i].x * cssW, ay = pts[i].y * cssH;
+      const bx = (i + 1 < pts.length ? pts[i + 1].x : pts[i].x) * cssW;
+      const by = (i + 1 < pts.length ? pts[i + 1].y : pts[i].y) * cssH;
+      const segLen = Math.hypot(bx - ax, by - ay);
+      const sub = Math.max(1, Math.ceil(segLen / 2));
+      for (let k = 0; k <= sub; k++) {
+        const t = k / sub;
+        const x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+        for (const c of cut) {
+          const dx = x - c.x, dy = y - c.y;
+          if (dx * dx + dy * dy <= thr2) { removed[i] = 1; break; }
         }
+        if (removed[i]) break;
       }
     }
-    if (!hit.length) return;
-    hit.forEach((id) => draw.erased.push(id));
-    state.strokes = state.strokes.filter((s) => !hit.includes(s.id));
+    if (!removed.some((v) => v === 1)) return [stroke];
+    // 把沒被擦到的點收成一段一段
+    const segs = [];
+    let cur = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (!removed[i]) { cur.push(pts[i]); continue; }
+      if (cur.length >= 1) segs.push(cur);
+      cur = [];
+    }
+    if (cur.length) segs.push(cur);
+    const out = [];
+    segs.forEach((seg, idx) => {
+      const copy = { ...stroke, points: seg, id: `${stroke.id}#${idx}` };
+      if (seg.length < 2) {
+        // 只留下一個點：畫成小圓點，保留原本的筆觸感
+        copy.points = [{ ...seg[0] }, { x: seg[0].x + 0.0006, y: seg[0].y + 0.0006 }];
+      }
+      out.push(copy);
+    });
+    return out;
+  }
+
+  function eraseHits(p) {
+    // 只有自己畫的筆跡才擦得掉
+    const mine = [];
+    for (const s of state.strokes) if (s.by === state.self.id) mine.push(s);
+    if (!mine.length) return;
+    // 擦除軌跡（從上一次位置到現在，避免兩點之間有間隙漏擦）
+    const prev = draw.lastErase || p;
+    draw.lastErase = p;
+    const { cssW, cssH } = state.render;
+    const cut = [];
+    const ax = prev.x * cssW, ay = prev.y * cssH, bx = p.x * cssW, by = p.y * cssH;
+    const len = Math.hypot(bx - ax, by - ay);
+    const steps = Math.max(1, Math.ceil(len / 2));
+    for (let i = 0; i <= steps; i++) cut.push({ x: ax + (bx - ax) * i / steps, y: ay + (by - ay) * i / steps });
+    const radius = (draw.stroke ? draw.stroke.size : currentStyle().size) / 2;
+    let changed = false;
+    const next = [];
+    for (const st of state.strokes) {
+      if (st.by !== state.self.id) { next.push(st); continue; }
+      const parts = subtractErase(st, cut, radius);
+      if (parts.length !== 1 || parts[0] !== st) changed = true;
+      next.push(...parts);
+    }
+    if (!changed) return;
+    state.strokes = next;
+    draw.erasedTouched = true;
     updateProgress();
   }
 
@@ -1466,19 +1561,19 @@
     const stroke = draw.stroke;
     draw.active = false;
     draw.stroke = null;
+    draw.startedAt = 0;
 
     if (draw.tool === 'eraser') {
       liveBuf.delete(stroke.id);
       clearFxLive();
-      const ids = draw.erased || [];
-      draw.erased = null;
+      draw.lastErase = null;
       state.dirty = true;
-      if (!ids.length) return;
-      if (state.conn.status === 'online' && state.room) {
-        wsSend('erase', { ids });
-      } else {
-        state.pending.push({ t: 'erase', body: { ids } });
-      }
+      if (!draw.erasedTouched) return;
+      draw.erasedTouched = false;
+      // 同步給房間：送出「我自己的筆畫現在長這樣」（別人的筆畫不受影響）
+      const mine = state.strokes.filter((s) => s.by === state.self.id).map((s) => serializeStroke(s));
+      if (state.room && state.conn.status === 'online') wsSend('sync-mine', { strokes: mine });
+      else { /* 離線時不需要同步 */ }
       return;
     }
 
@@ -1561,6 +1656,8 @@
       // PointerEvent 預設的 button 是 -1（代表「沒有按鍵」），所以先套用預設值再比對
       const btn = e.button ?? 0;
       if (btn !== 0 && e.pointerType === 'mouse') return;
+      // 正在畫的時候，第二根手指不要插進來亂
+      if (draw.active) return;
       if (state.selection.ids) {
         if (state.selection.moving && elAt(e) !== ink) return; // 交給搬移處理
         hideSelection();
@@ -1570,6 +1667,7 @@
       hideLanding();
       capturePointer(ink, e.pointerId);
       draw.pointerId = e.pointerId;
+      draw.startedAt = performance.now();
       const p = toNorm(e);
       if (e.pointerType !== 'mouse' && e.pointerType !== 'pen') ensureSizeForTouch();
       startStroke(p);
@@ -1578,13 +1676,19 @@
 
     const move = (e) => {
       const p = toNorm(e);
+      if (draw.active && draw.startedAt && performance.now() - draw.startedAt > 1500 && draw.stroke && draw.stroke.points && draw.stroke.points.length < 2) {
+        // 按住太久卻沒有移動：視為放棄這一筆，避免繪圖狀態卡住
+        endStroke();
+        draw.pointerId = null;
+      }
       if (!draw.active) {
         setEdgeMotion(p);
         state.lastPointer = p;
         sendCursor(p, false);
         return;
       }
-      if (draw.pointerId !== e.pointerId) return;
+      // 第一根手指開始畫之後，其他指標的移動一律忽略
+      if (draw.pointerId !== null && draw.pointerId !== e.pointerId) return;
       // 只有「真的由瀏覽器產生的同一個指標」才展開合併事件；合成事件沒有座標，不能用
       let events = [e];
       if (e.getCoalescedEvents && e.isTrusted) {
@@ -1604,7 +1708,9 @@
     });
 
     const up = (e) => {
-      if (draw.pointerId !== e.pointerId || !draw.active) return;
+      // 放手時只要還在畫就結束這一筆；不要用 pointerId 比對，
+      // 否則某些裝置 / 事件的 id 對不上時，整筆就會一直被當成「進行中」而消失。
+      if (!draw.active) return;
       endStroke();
       draw.pointerId = null;
     };
@@ -1852,6 +1958,17 @@
         const set = new Set(msg.ids);
         state.strokes = state.strokes.filter((s) => !set.has(s.id));
         state.dirty = true;
+        updateProgress();
+        break;
+      }
+      case 'sync-mine': {
+        if (!msg.by || msg.by === state.self.id) break;
+        // 某個夥伴擦掉了自己一部分：只替換他的筆畫，其他人的原樣保留
+        const others = state.strokes.filter((s) => s.by !== msg.by);
+        const mine = (msg.strokes || []).map(deserializeStroke);
+        state.strokes = others.concat(mine);
+        state.dirty = true;
+        state.shimmerDirty = true;
         updateProgress();
         break;
       }
@@ -2246,12 +2363,27 @@
 
   function updateUndoButtons() {
     const mine = state.strokes.some((s) => s.by === state.self.id);
-    els.undoBtn.disabled = !mine;
+    // 剛剛按過重置時，「復原」要能把重置前的畫救回來
+    const canUndoReset = !!(state.lastReset && state.lastReset.length && state.strokes.length === 0);
+    els.undoBtn.disabled = !mine && !canUndoReset;
+    els.undoBtn.title = canUndoReset ? '還原重置前的畫 (Ctrl+Z)' : '復原 (Ctrl+Z)';
     els.redoBtn.disabled = !state.undone.length;
   }
 
   /* ---- 復原 / 重做 / 清空 ---- */
   function undo() {
+    // 剛剛按過「重置」→ 先把重置前的畫還原
+    if (state.lastReset && state.lastReset.length && state.strokes.length === 0) {
+      const restored = state.lastReset;
+      state.lastReset = null;
+      state.strokes = restored;
+      state.dirty = true;
+      state.shimmerDirty = true;
+      updateProgress();
+      renderInk();
+      toast('已還原重置前的畫');
+      return;
+    }
     const idx = state.strokes.map((s) => s.by).lastIndexOf(state.self.id);
     if (idx < 0) { toast('目前沒有可以復原的筆畫'); return; }
     const [s] = state.strokes.splice(idx, 1);
@@ -2494,6 +2626,42 @@
     els.joinCodeInput2.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinFromModal(); });
   }
 
+  /**
+   * 把繪圖相關的 canvas 狀態（濾鏡、透明度、裁切、混色、虛線、陰影…）全部歸零。
+   * 任何一個漏掉都會讓「之後畫的筆」看起來完全沒反應（例如淡到看不見、被裁掉、陰影蓋住）。
+   * 注意：不能用 canvas.width = width 來重設，那會把畫布內容一起清掉。
+   */
+  function resetPaintCtx() {
+    const dpr = state.render.dpr || 1;
+    for (const c of [ctxPaper, ctxSoft, ctxFx, ctxInk]) {
+      if (!c) continue;
+      try {
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.filter = 'none';
+        c.globalAlpha = 1;
+        c.globalCompositeOperation = 'source-over';
+        c.shadowBlur = 0;
+        c.shadowColor = 'rgba(0,0,0,0)';
+        c.shadowOffsetX = 0;
+        c.shadowOffsetY = 0;
+        c.setLineDash([]);
+        c.lineDashOffset = 0;
+        c.lineWidth = 1;
+        c.lineCap = 'butt';
+        c.lineJoin = 'miter';
+        c.miterLimit = 10;
+        c.lineDashOffset = 0;
+        c.beginPath();
+        c.rect(0, 0, c.canvas.width, c.canvas.height);
+        c.clip();
+        c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        c.globalAlpha = 1;
+      } catch (e) {
+        console.warn('resetPaintCtx', e);
+      }
+    }
+  }
+
   /** 重置：清空畫布上所有筆跡、把選取 / 搬移等狀態歸零，工具列立刻可以再畫 */
   function resetCanvas() {
     const n = state.strokes.length;
@@ -2503,15 +2671,22 @@
     draw.stroke = null;
     draw.pointerId = null;
     draw.erased = null;
+    draw.erasedTouched = false;
+    draw.lastErase = null;
     liveBuf.clear();
     state.selection.ids = null;
     state.selection.moving = false;
     state.selection.start = null;
     els.selBar.classList.remove('show');
+    // 重置前的畫保留起來，誤按時可以用「復原」救回來
+    state.lastReset = state.strokes.slice();
     state.strokes = [];
     state.undone = [];
     state.pending = [];
     state.dirty = true;
+    resetPaintCtx();
+    // 立刻把畫布重畫成空白（不等下一幀），避免重畫前又被復原填回舊圖層
+    renderInk();
     hideSelection();
     els.inkCanvas.style.cursor = state.tool === 'eraser' ? 'cell' : 'crosshair';
     updateProgress();

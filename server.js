@@ -526,6 +526,22 @@ function handleMessage(conn, msg) {
       broadcast(room, { t: 'stroke-update', index: idx, points }, conn.sid);
       break;
     }
+    case 'sync-mine': {
+      // 局部橡皮擦：客人端送出「自己目前的筆畫」，伺服器只替換他自己的那些
+      if (!room) return;
+      const list = Array.isArray(body.strokes) ? body.strokes.slice(0, 600) : [];
+      const clean = [];
+      for (const raw of list) {
+        const st = sanitizeStroke(raw);
+        if (!st) continue;
+        st.by = member.id;
+        clean.push(st);
+      }
+      room.strokes = room.strokes.filter((sm) => sm.by !== member.id).concat(clean);
+      member.strokeCount = room.strokes.length;
+      broadcast(room, { t: 'sync-mine', by: member.id, strokes: clean }, conn.sid);
+      break;
+    }
     case 'erase': {
       if (!room) return;
       const ids = Array.isArray(body.ids) ? body.ids.slice(0, 2000) : [];

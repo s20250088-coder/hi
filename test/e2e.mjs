@@ -275,6 +275,32 @@ await test('「重置」會清空整張色紙並通知房間裡的人', async ()
   await waitFor(alice, 'member-left');
 });
 
+await test('局部橡皮擦：夥伴只替換自己的筆畫（sync-mine）', async () => {
+  const carol = client('Carol');
+  const dave = client('Dave');
+  await carol.open();
+  await dave.open();
+  send(carol, 'join-room', { code: roomCode });
+  await waitFor(carol, 'joined');
+  send(dave, 'join-room', { code: roomCode });
+  await waitFor(dave, 'joined');
+  // Carol 畫一整條線
+  send(carol, 'stroke', { stroke: { id: 'line', tool: 'pen', color: '#111111', size: 4, alpha: 1, points: [0.1, 0.3, 0.9, 0.3], paperW: 534 } });
+  await waitFor(dave, 'stroke');
+  // Carol 把中間一段擦掉 → 她改為送出「兩段」
+  send(carol, 'sync-mine', { strokes: [
+    { id: 'line#0', tool: 'pen', color: '#111111', size: 4, alpha: 1, points: [0.1, 0.3, 0.45, 0.3], paperW: 534 },
+    { id: 'line#1', tool: 'pen', color: '#111111', size: 4, alpha: 1, points: [0.55, 0.3, 0.9, 0.3], paperW: 534 },
+  ] });
+  const synced = await waitFor(dave, 'sync-mine');
+  assert.equal(synced.by, carol.id);
+  assert.equal(synced.strokes.length, 2);
+  assert.deepEqual(synced.strokes.map((x) => x.id), ['line#0', 'line#1']);
+  carol.close();
+  dave.close();
+  await sleep(100);
+});
+
 await test('同一 memberId 從新連線登入會踢掉舊連線', async () => {
   const c1 = client('Eve');
   await c1.open();
