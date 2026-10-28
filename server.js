@@ -331,7 +331,7 @@ function findMember(body, conn) {
 
 function sanitizeStroke(s) {
   if (!s || typeof s !== 'object') return null;
-  const tool = ['pencil', 'watercolor', 'highlight', 'pen'].includes(s.tool) ? s.tool : 'pen';
+  const tool = ['pencil', 'watercolor', 'highlight', 'pen', 'goldpen'].includes(s.tool) ? s.tool : 'pen';
   const points = Array.isArray(s.points)
     ? s.points.slice(0, LIMITS.maxStroke).map((v) => clampNum(v, -0.5, 1.5, 0))
     : [];

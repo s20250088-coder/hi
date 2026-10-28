@@ -1,5 +1,6 @@
 # GitHub Pages 建置輸出
 dist/
+app.config.js
 
 # 執行時產生的資料（收到的交換色紙）
 data/

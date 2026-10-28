@@ -96,12 +96,14 @@ await test('畫筆即時同步到另一端', async () => {
   assert.ok(!alice.inbox.some((m) => m.t === 'stroke'), '自己不會收到自己的筆畫');
 });
 
-await test('四種筆都能過伺服器（鉛筆/水彩/螢光筆/原子筆）', async () => {
+await test('五種筆都能過伺服器（鉛筆/水彩/螢光筆/原子筆/燙金筆）', async () => {
   clearInbox(bob);
-  for (const tool of ['pencil', 'watercolor', 'highlight', 'pen']) {
-    send(bob, 'stroke', { stroke: { id: 't-' + tool, tool, color: '#123456', size: 0.01, alpha: 1, points: [0.5, 0.5, 0.6, 0.6] } });
+  for (const tool of ['pencil', 'watercolor', 'highlight', 'pen', 'goldpen']) {
+    send(bob, 'stroke', { stroke: { id: 't-' + tool, tool, color: '#123456', size: 6, alpha: 1, points: [0.5, 0.5, 0.6, 0.6], paperW: 534 } });
     const got = await waitFor(alice, 'stroke');
     assert.equal(got.stroke.tool, tool);
+    // 筆寬換算用的紙張寬度也要一起去 / 回來
+    assert.ok(got.stroke.paperW > 0, 'paperW 應為正數');
   }
 });
 

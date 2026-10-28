@@ -179,6 +179,7 @@
     watercolor: { label: '水彩', size: 18, alpha: 0.55, color: '#e8747c' },
     highlight: { label: '螢光筆', size: 22, alpha: 0.45, color: '#ffe045' },
     pen: { label: '原子筆', size: 2.4, alpha: 1, color: '#1d1c2b' },
+    goldpen: { label: '燙金筆', size: 6, alpha: 1, color: '#e8c269' },
     eraser: { label: '橡皮擦', size: 26, alpha: 1, color: '#ffffff' },
   };
 
@@ -199,6 +200,7 @@
       watercolor: { size: 18, alpha: 0.55 },
       highlight: { size: 22, alpha: 0.45 },
       pen: { size: 2.4, alpha: 1 },
+      goldpen: { size: 6, alpha: 1 },
       eraser: { size: 26, alpha: 1 },
     },
     recent: [],
@@ -734,6 +736,18 @@
     return t;
   }
 
+  /** mix() 回傳 #rrggbb，這裡轉成 "r,g,b" 好用在 rgba() 裡 */
+  function mixHex(a, b, t) {
+    return hexToRgb(mix(a, b, t)).join(',');
+  }
+
+  /** 沿線的總長（CSS 像素） */
+  function pathLength(pts) {
+    let total = 0;
+    for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    return total;
+  }
+
   function setupCtx(c, lw) {
     c.lineCap = 'round';
     c.lineJoin = 'round';
@@ -937,42 +951,75 @@
       return;
     }
 
-    /* --- 鉛筆 --- */
+    /* --- 鉛筆 / 炭筆 --- */
     if (tool === 'pencil') {
+      // 炭黑紙紋：讓線條裡有留白與顆粒，像炭筆擦過粗紙
       const grain = getGrainTex('p' + seed);
-      // 石墨粉末
-      ctx.filter = `blur(${Math.max(0.4, lw * 0.09)}px)`;
+      const charcoal = luminance(color) < 0.2;
+      const deep = charcoal ? mix(color, '#000000', 0.35) : mix(color, '#000000', 0.25);
+      // 1. 石墨粉：被紙磨開的柔邊
+      ctx.filter = `blur(${Math.max(0.5, lw * 0.12)}px)`;
       ctx.strokeStyle = color;
-      ctx.lineWidth = lw * 1.18;
-      ctx.globalAlpha = alpha * 0.32;
+      ctx.lineWidth = lw * 1.28;
+      ctx.globalAlpha = alpha * 0.3;
       if (n >= 2) { ctx.beginPath(); smoothPath(ctx, pts); ctx.stroke(); }
       ctx.filter = 'none';
-      // 注意：createPattern 會把當下的 filter 烘進圖樣，所以一定要在濾鏡重設後才建立
+      // 2. 筆身 + 紙紋（炭筆會透出更多紙的白，線條較「毛」）
+      ctx.globalAlpha = alpha * 0.55;
+      ctx.lineWidth = lw * (charcoal ? 1.06 : 1.0);
+      ctx.strokeStyle = color;
+      if (n >= 2) { ctx.beginPath(); smoothPath(ctx, pts); ctx.stroke(); }
+      // 注意：createPattern 會把當下的 filter 烘進圖樣，濾鏡重設後才建立
+      ctx.globalAlpha = alpha * (charcoal ? 0.97 : 0.9);
       ctx.strokeStyle = ctx.createPattern(grain, 'repeat');
-      ctx.globalAlpha = alpha * 0.9;
-      ctx.lineWidth = lw;
-      if (n >= 2) { ctx.beginPath(); smoothPath(ctx, pts); ctx.stroke(); }
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = alpha * 0.85;
-      ctx.lineWidth = lw * 0.92;
-      if (n >= 2) { ctx.beginPath(); smoothPath(ctx, pts); ctx.stroke(); }
-      // 石墨顆粒起伏
+      if (n >= 2) ctx.stroke();
+      // 3. 炭筆特有的側面寬筆觸：沿線條拖出扁平的灰帶
+      if (charcoal && n >= 3) {
+        ctx.save();
+        ctx.lineCap = 'round';
+        const band = new Path2D();
+        smoothPath(band, pts);
+        ctx.globalAlpha = alpha * 0.12;
+        ctx.strokeStyle = mix(color, '#000000', 0.1);
+        ctx.lineWidth = lw * 1.36;
+        ctx.stroke(band);
+        ctx.restore();
+      }
+      // 4. 邊緣的炭粉碎屑與細長刮痕
       ctx.lineCap = 'butt';
-      ctx.strokeStyle = color;
       const stride = Math.max(1, Math.round(lw / 3));
+      const shreds = charcoal ? 2 : 1;
       for (let i = 0; i + stride < n; i += stride) {
         const a = pts[i];
         const b = pts[i + stride];
         const [tx, ty] = normalAt(pts, i);
-        const off = (rnd() - 0.5) * lw * 0.95;
-        ctx.globalAlpha = alpha * (0.12 + rnd() * 0.3);
-        ctx.lineWidth = Math.max(0.35, lw * (0.12 + rnd() * 0.18));
-        ctx.beginPath();
-        ctx.moveTo(a.x + tx * off, a.y + ty * off);
-        ctx.lineTo(b.x + tx * off, b.y + ty * off);
-        ctx.stroke();
+        for (let k = 0; k < shreds; k++) {
+          const off = (rnd() - 0.5) * lw * (charcoal ? 1.35 : 0.95);
+          ctx.globalAlpha = alpha * (0.08 + rnd() * (charcoal ? 0.42 : 0.3));
+          ctx.lineWidth = Math.max(0.35, lw * (charcoal ? 0.08 + rnd() * 0.2 : 0.12 + rnd() * 0.18));
+          ctx.strokeStyle = rnd() > 0.8 ? deep : color;
+          ctx.beginPath();
+          ctx.moveTo(a.x + tx * off, a.y + ty * off);
+          ctx.lineTo(b.x + tx * off + (rnd() - 0.5) * lw * 0.3, b.y + ty * off + (rnd() - 0.5) * lw * 0.3);
+          ctx.stroke();
+        }
       }
-      // 重壓處
+      // 5. 炭筆的擦抹痕：邊緣會暈開一點
+      if (charcoal) {
+        ctx.lineCap = 'round';
+        ctx.globalAlpha = alpha * 0.06;
+        ctx.strokeStyle = '#000';
+        for (let i = 0; i < 6; i++) {
+          const [tx, ty] = normalAt(pts, Math.floor(rnd() * n));
+          ctx.lineWidth = lw * (0.5 + rnd() * 0.8);
+          const p = pts[Math.floor(rnd() * n)];
+          ctx.beginPath();
+          ctx.moveTo(p.x + tx * lw * 0.9, p.y + ty * lw * 0.9);
+          ctx.lineTo(p.x + tx * lw * (0.9 + rnd()), p.y + ty * lw * (0.9 + rnd()));
+          ctx.stroke();
+        }
+      }
+      // 6. 重壓處
       ctx.lineCap = 'round';
       ctx.strokeStyle = mix(color, '#000000', 0.3);
       ctx.globalAlpha = alpha * 0.16;
@@ -986,6 +1033,82 @@
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
       }
+      ctx.restore();
+      return;
+    }
+
+    /* --- 燙金筆 --- */
+    if (tool === 'goldpen') {
+      // 燙金筆：像拿金箔／金屬漆在紙上壓過，有立體金屬高光與閃亮金粉（每幀重新閃爍）
+      const [cr, cg, cb] = hexToRgb(color);
+      const flick = state.t;
+      const key = color + ':' + seed;
+      const path = new Path2D();
+      if (n < 3) {
+        path.arc(pts[0].x, pts[0].y, lw / 2, 0, Math.PI * 2);
+      } else {
+        smoothPath(path, pts);
+      }
+      // 1. 壓在紙上的暗邊（讓金線「浮」起來）
+      ctx.save();
+      ctx.strokeStyle = 'rgba(40, 24, 4, 0.55)';
+      ctx.lineWidth = lw * 1.25;
+      ctx.globalAlpha = alpha * 0.5;
+      ctx.save();
+      ctx.translate(lw * 0.08, lw * 0.1);
+      ctx.stroke(path);
+      ctx.restore();
+      // 2. 金屬底：斜向金箔漸層
+      const g = ctx.createLinearGradient(
+        pts[0].x - lw, pts[0].y - lw,
+        pts[n - 1].x + lw, pts[n - 1].y + lw
+      );
+      g.addColorStop(0, `rgba(${mixHex(color, '#fff6c8', 0.55)},${alpha})`);
+      g.addColorStop(0.25, `rgba(${mixHex(color, '#c8901e', 0.35)},${alpha})`);
+      g.addColorStop(0.5, `rgba(${mixHex(color, '#fffbe0', 0.75)},${alpha})`);
+      g.addColorStop(0.72, `rgba(${mixHex(color, '#8a5a10', 0.3)},${alpha})`);
+      g.addColorStop(1, `rgba(${mixHex(color, '#ffe9a0', 0.65)},${alpha})`);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.strokeStyle = g;
+      ctx.lineWidth = lw;
+      ctx.stroke(path);
+      if (n < 3) ctx.fill(path);
+      // 3. 中心的一道白光（凸面反射）
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = alpha * 0.55;
+      ctx.strokeStyle = '#fff8dc';
+      ctx.lineWidth = Math.max(0.5, lw * 0.22);
+      ctx.stroke(path);
+      // 4. 右上角的一道窄高光
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.translate(-lw * 0.16, -lw * 0.16);
+      ctx.stroke(path);
+      ctx.translate(lw * 0.16, lw * 0.16);
+      ctx.globalCompositeOperation = 'source-over';
+      // 5. 金粉亮點：每幀閃爍，沿著筆畫撒金箔
+      const dust = clamp(Math.round((n + pathLength(pts)) / 26), 3, 60);
+      const rndGold = mulberry32(hashStr(key));
+      for (let i = 0; i < dust; i++) {
+        const p = pts[Math.floor(rndGold() * n)];
+        const [tx, ty] = normalAt(pts, Math.floor(rndGold() * n));
+        const off = (rndGold() - 0.5) * lw * 0.85;
+        const x = p.x + tx * off;
+        const y = p.y + ty * off;
+        const tw = 0.55 + 0.45 * Math.sin(flick * (3 + rndGold() * 4) + rndGold() * 6.28);
+        const r = lw * (0.07 + rndGold() * 0.09) * (0.7 + tw * 0.6);
+        const gg = ctx.createRadialGradient(x, y, 0, x, y, r * 3);
+        gg.addColorStop(0, `rgba(255, 255, 240, ${alpha * tw})`);
+        gg.addColorStop(0.5, `rgba(255, 214, 120, ${alpha * tw * 0.55})`);
+        gg.addColorStop(1, 'rgba(255, 200, 90, 0)');
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = gg;
+        ctx.beginPath();
+        ctx.arc(x, y, r * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      void cr; void cg; void cb;
       ctx.restore();
       return;
     }
@@ -1113,6 +1236,15 @@
     for (const l2 of liveBuf.values()) if (l2 !== exceptLive) paintLive(l2);
   }
 
+  /** 紙上有燙金筆的線條嗎？（金粉會隨時間閃爍，需要每幀重畫） */
+  function hasShimmer() {
+    if (state.shimmer === undefined || state.shimmerDirty) {
+      state.shimmer = state.strokes.some((s) => s.tool === 'goldpen');
+      state.shimmerDirty = false;
+    }
+    return state.shimmer;
+  }
+
   /** 主渲染：清空後把所有筆畫重畫一次 */
   function renderInk() {
     if (!ctxInk) return;
@@ -1123,6 +1255,7 @@
     paintStrokesToInk(null);
     ctxInk.setTransform(state.render.dpr, 0, 0, state.render.dpr, 0, 0);
     state.dirty = false;
+    state.shimmerDirty = true;
   }
 
   /** 橡皮擦的即時筆跡畫在 fx 圖層上 */
@@ -1198,7 +1331,8 @@
     state.t += dt;
     tickEdgeMotion(dt);
     renderFx(state.t);
-    if (state.dirty) renderInk();
+    // 紙上有燙金筆時要每幀重畫（金粉會閃爍），否則只在有變動時重畫
+    if (state.dirty || hasShimmer()) renderInk();
     if (draw.active && draw.tool === 'eraser') drawErasePreview();
     updateRemoteCursors();
     requestAnimationFrame(frame);
@@ -1984,7 +2118,8 @@
     els.sizeOut.textContent = tool === 'eraser' ? Math.round(o.size) : o.size;
     els.alphaInput.value = Math.round(o.alpha * 100);
     els.alphaOut.textContent = Math.round(o.alpha * 100) + '%';
-    els.alphaInput.disabled = tool === 'eraser';
+    els.alphaInput.disabled = tool === 'eraser' || tool === 'goldpen';
+    els.alphaInput.title = tool === 'goldpen' ? '燙金筆是金屬漆，固定不透明' : '';
     els.inkCanvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
     if (tool === 'eraser') hideSelection();
   }
@@ -2044,7 +2179,7 @@
       els.alphaOut.textContent = els.alphaInput.value + '%';
     });
     // 記錄 shortcut 提示文字
-    const keys = { pencil: '1', watercolor: '2', highlight: '3', pen: '4', eraser: '5' };
+    const keys = { pencil: '1', watercolor: '2', highlight: '3', pen: '4', goldpen: '6', eraser: '5' };
     $$('.tool').forEach((el) => {
       const k = document.createElement('kbd');
       k.textContent = keys[el.dataset.tool];
@@ -2925,6 +3060,7 @@
       else if (e.key === '3') setTool('highlight');
       else if (e.key === '4') setTool('pen');
       else if (e.key === '5') setTool('eraser');
+      else if (e.key === '6') setTool('goldpen');
       else if (e.key === '[' || e.key === ']') {
         const o = state.toolOpts[state.tool];
         o.size = clamp(o.size + (e.key === ']' ? 1 : -1), 1, 40);
