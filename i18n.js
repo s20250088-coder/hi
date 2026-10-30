@@ -68,6 +68,7 @@
 
       'author.eyebrow': '作者',
       'author.github': 'GitHub 帳號',
+      'author.name': '姓名',
       'author.class': '班別',
       'author.text': '這個專題從一張會發光的色紙開始：我想知道能不能只用瀏覽器原生功能，做出「紙」和「筆」的質感，並且讓兩個人真的能在同一張紙上一起完成一幅畫。',
 
@@ -338,6 +339,7 @@
 
       'author.eyebrow': 'AUTHOR',
       'author.github': 'GitHub account',
+      'author.name': 'Name',
       'author.class': 'Class',
       'author.text': 'The project started with one glowing sheet of paper: could the texture of paper and pen be recreated with nothing but built-in browser features — and could two people really finish one drawing together on the same sheet?',
 
