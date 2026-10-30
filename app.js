@@ -8,6 +8,8 @@
  * ================================================================ */
 (() => {
   'use strict';
+  // 共享給展示站 / 線上試玩使用（同一份渲染程式，避免另外維護一套）
+  const CP_ENGINE = (window.CP_ENGINE = window.CP_ENGINE || {});
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -101,7 +103,7 @@
     const wrap = $('#toastWrap');
     const el = document.createElement('div');
     el.className = 'toast' + (opts.gold ? ' gold' : '');
-    el.textContent = text;
+    el.textContent = opts.key ? $I(opts.key, opts.vars) : tMsg(String(text), opts.vars);
     wrap.appendChild(el);
     while (wrap.children.length > 3) wrap.firstChild.remove();
     setTimeout(() => {
@@ -158,6 +160,47 @@
   const HAS_BACKEND = !!SITE.apiBase || !SITE.staticHost;
   if (SITE.apiBase) SITE.staticHost = false;
 
+  const $I = (key, vars) => (window.CP_I18N ? window.CP_I18N.t(key, vars) : key);
+  const isEN = () => !!(window.CP_I18N && window.CP_I18N.current() === 'en');
+
+  /** 動態訊息：把中文原文對應到字典 key（沒有對應就原樣顯示） */
+  const MSG_KEYS = new Map(Object.entries({
+    '這個網站是 GitHub Pages 的靜態版，聯機與交換色紙需要另外的伺服器。想和朋友一起畫，請在本機跑 `node server.js`。': 'toast.staticHost',
+    '請用 node server.js 啟動伺服器，才能和朋友一起畫': 'toast.noServer',
+    '連線中斷了，正在重新連線…': 'toast.disconnected',
+    '已離開房間，現在是離線模式': 'toast.leftRoom',
+    '已還原重置前的畫': 'toast.resetRestored',
+    '目前沒有可以復原的筆畫': 'toast.noUndo',
+    '目前沒有可以重做的筆畫': 'toast.noRedo',
+    '你還沒有畫任何東西': 'toast.noStroke',
+    '拖曳紙面就可以搬移選取的筆跡': 'toast.moved',
+    '框內沒有你自己畫的筆跡': 'toast.noStrokeSel',
+    '筆跡已搬到新的位置（只會顯示在你的畫面上）': 'toast.moved',
+    '已重置畫布，可以重新開始了': 'toast.resetDone',
+    '想開房間的話，按下面的「建立雙人房間」': 'toast.needCode',
+    '房間號是 6 位英數字，例如 K3M7QF': 'toast.codeLength',
+    '已從畫廊移除': 'toast.galleryRemoved',
+    '已下載你的色紙 PNG': 'toast.downloaded',
+    '要先和朋友在同一間房間，才能交換色紙': 'toast.noRoom',
+    '房間裡還沒有其他人，先邀請朋友加入吧': 'toast.noOthers',
+    '已婉拒交換': 'toast.declined',
+    '目前是離線模式，開啟房間後朋友才看得到你的訊息。': 'chat.offlineNote',
+    '目前沒有其他人在線。': 'room.empty',
+    '（目前是離線模式，訊息只會顯示在你這裡）': 'sys.offlineOnly',
+    '已收藏到畫廊': 'toast.gallerySavedShort',
+    '圖片太大，無法收藏（單張上限 8MB）': 'toast.tooBig',
+    '目前沒有可以回禮的作品': 'toast.emptyGalleryLocal',
+    '請先在視窗中輸入暱稱': 'toast.needNick',
+  }));
+
+  function tMsg(text, vars) {
+    if (!window.CP_I18N) return text;
+    if (!isEN()) return text;
+    const key = MSG_KEYS.get(text);
+    if (key) return $I(key, vars);
+    return text;
+  }
+
   const TOOLS = {
     pencil: { label: '鉛筆', size: 3, alpha: 0.9, color: '#43413f' },
     watercolor: { label: '水彩', size: 18, alpha: 0.55, color: '#e8747c' },
@@ -181,16 +224,28 @@
     ['#c9a7f0', '丁香紫'], ['#8b5a3c', '可可棕'], ['#c67b5c', '陶土'], ['#f6d0d8', '櫻花'], ['#bcd5a0', '抹茶'],
     ['#a9cfdf', '霧藍'], ['#e3c3db', '藕粉'], ['#3d3a42', '炭黑'], ['#c9a227', '古金'],
   ];
+  const EN_COLOR_NAMES = {
+    墨黑: 'Ink black', 石墨灰: 'Graphite', 純白: 'Pure white', 珊瑚紅: 'Coral', 朱紅: 'Vermilion',
+    胭脂: 'Carmine', 杏橙: 'Apricot', 燙金: 'Gold', 檸檬黃: 'Lemon', 草綠: 'Grass', 孔雀綠: 'Peacock',
+    水藍: 'Aqua', 晴空藍: 'Sky blue', 群青: 'Ultramarine', 薰衣草: 'Lavender', 丁香紫: 'Lilac',
+    可可棕: 'Cocoa', 陶土: 'Terracotta', 櫻花: 'Sakura', 抹茶: 'Matcha', 霧藍: 'Misty blue',
+    藕粉: 'Lotus', 炭黑: 'Charcoal', 古金: 'Antique gold',
+  };
+
   function colorName(hex) {
     const [r, g, b] = hexToRgb(hex);
-    let best = '自訂顏色';
+    let best = null;
     let bestD = Infinity;
     for (const [c, name] of COLOR_NAMES) {
       const [r2, g2, b2] = hexToRgb(c);
       const d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
       if (d < bestD) { bestD = d; best = name; }
     }
-    return bestD < 900 ? best : '自訂顏色';
+    const fallback = $I('picker.name');
+    if (bestD >= 900) return fallback;
+    // 英文介面回傳英文色名（找不到就回中文）
+    if (isEN()) return EN_COLOR_NAMES[best] || best;
+    return best;
   }
   const normalizeHex = (v) => {
     let t = String(v || '').trim().replace(/^#/, '').toLowerCase();
@@ -790,14 +845,21 @@
     const n = pts.length;
     if (!n) return;
     const rnd = mulberry32(seed);
-    const W = ctx.canvas.width;
-    const H = ctx.canvas.height;
+    // canvas 尺寸：畫布寬高（某些實作沒有 ctx.canvas，退回用畫筆範圍估一個足夠大的值）
+    let cw = (ctx.canvas && ctx.canvas.width) || 0;
+    let ch = (ctx.canvas && ctx.canvas.height) || 0;
+    if (!cw || !ch) {
+      let maxX = 0, maxY = 0;
+      for (const p of pts) { if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y; }
+      cw = Math.ceil(maxX) + 64;
+      ch = Math.ceil(maxY) + 64;
+    }
     const lw = Math.max(0.6, size);
     ctx.save();
     // 防禦：重設裁切區、濾鏡、陰影與虛線，
     // 避免先前哪一筆漏了 restore，就讓之後的筆跡整片消失或被陰影蓋住
     ctx.beginPath();
-    ctx.rect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    if (cw && ch) ctx.rect(0, 0, cw, ch);
     ctx.clip();
     ctx.filter = 'none';
     ctx.shadowBlur = 0;
@@ -1887,23 +1949,56 @@
     }, delay);
   }
 
+  let connLabelKey = null;
+  let connLabelVars = null;
   function updateConnUI() {
     const s = state.conn.status;
     els.connDot.parentElement.classList.toggle('online', s === 'online');
+    // 記住目前的狀態對應哪一個字典 key，語言切換時才能重新翻譯
+    let key = 'mode.offline';
+    let vars = null;
     if (s === 'online' && state.room) {
-      els.roomLabel.textContent = '聯機中';
+      key = 'mode.online';
       els.roomIdLabel.hidden = false;
       els.roomIdLabel.textContent = state.room.code;
       els.copyLinkBtn.hidden = false;
     } else if (s === 'connecting') {
-      els.roomLabel.textContent = state.room ? '重新連線中…' : (state.conn.joining ? `正在加入 ${state.conn.joining}…` : '連線中…');
+      if (state.room) key = 'mode.reconnecting';
+      else if (state.conn.joining) { key = 'mode.joining'; vars = { code: state.conn.joining }; }
+      else key = 'mode.connecting';
       els.roomIdLabel.hidden = !state.room;
     } else {
-      els.roomLabel.textContent = state.room ? '連線中斷' : (HAS_BACKEND ? '離線模式' : '單機模式');
+      key = state.room ? 'mode.dropped' : (HAS_BACKEND ? 'mode.offline' : 'mode.single');
       els.roomIdLabel.hidden = true;
       els.copyLinkBtn.hidden = true;
     }
+    connLabelKey = key;
+    connLabelVars = vars;
+    els.roomLabel.dataset.i18n = key;
+    els.roomLabel.textContent = $I(key, vars);
+    // 登入後的回呼（例如建立房間的按鈕會等到連線成功才顯示結果）
+    if (s === 'online' || s === 'offline') fireConnReady();
     renderRoomCard();
+  }
+
+  /* ---- 連線完成回呼：createRoomFlow / joinRoom 用「等連線成功」而不是固定等待 ---- */
+  let readyWaiters = [];
+  function fireConnReady() {
+    if (!readyWaiters.length) return;
+    const cbs = readyWaiters;
+    readyWaiters = [];
+    const ok = state.conn.status === 'online';
+    for (const cb of cbs) { try { cb(ok, null); } catch (e) { console.warn(e); } }
+  }
+  function waitForConnection(timeout = 6000) {
+    return new Promise((resolve) => {
+      if (state.conn.status === 'online') return resolve(true);
+      let done = false;
+      const finish = (ok) => { if (done) return; done = true; clearTimeout(timer); readyWaiters = readyWaiters.filter((c) => c !== cb); resolve(ok); };
+      const cb = (ok) => finish(ok);
+      readyWaiters.push(cb);
+      const timer = setTimeout(() => finish(false), timeout);
+    });
   }
 
   function flushPending() {
@@ -1974,7 +2069,7 @@
         state.dirty = true;
         updateProgress();
         hideSelection();
-        toast(`${msg.name || '夥伴'} 重置了這張色紙`);
+        toast(isEN() ? `${msg.name || 'Partner'} reset this sheet` : `${msg.name || '夥伴'} 重置了這張色紙`);
         break;
       case 'erased': {
         const set = new Set(msg.ids);
@@ -2015,21 +2110,21 @@
         modalExchangeOffer(msg.offer);
         break;
       case 'exchange-sent':
-        toast(`交換請求已送出給 ${msg.toName}，等待對方回禮 ✨`, { gold: true });
+        toast($I('toast.sentTo', { name: msg.toName }), { gold: true });
         break;
       case 'exchange-accepted':
-        toast(`${msg.name} 收下了你的色紙 🎉`, { gold: true });
+        toast(isEN() ? `${msg.name} accepted your paper 🎉` : `${msg.name} 收下了你的色紙 🎉`, { gold: true });
         systemChat(`${msg.name} 收下了交換的色紙`);
         break;
       case 'exchange-declined':
-        toast(`${msg.name} 這次婉拒了交換`);
+        toast($I('toast.declinedBy', { name: msg.name }));
         break;
       case 'exchange-cancelled':
-        toast(`${msg.name} 取消了交換`);
+        toast($I('toast.cancelledBy', { name: msg.name }));
         if (els.incomingModal.hidden === false) closeModal('incomingModal');
         break;
       case 'gallery-saved':
-        toast(`已收藏 ${msg.items.length} 張色紙到畫廊`, { gold: true });
+        toast($I('toast.gallerySaved', { n: msg.items.length }), { gold: true });
         setGalleries([...getGalleries(), ...msg.items.map(toLocalGallery)]);
         switchTab('gallery');
         break;
@@ -2087,8 +2182,8 @@
     renderRoomCard();
     switchTab('friends');
     flushPending();
-    if (msg.isNew) toast(`房間 ${msg.room.code} 已建立，複製邀請連結給朋友吧！`, { gold: true });
-    else toast(`已加入房間 ${msg.room.code}`);
+    if (msg.isNew) toast($I('toast.roomNew', { code: msg.room.code }), { gold: true });
+    else toast($I('toast.roomJoined', { code: msg.room.code }));
     state.lastChatCount = (state.room && msg.room.history ? msg.room.history.length : 0);
   }
 
@@ -2118,8 +2213,8 @@
   function applyTheme(theme, { save = true } = {}) {
     const t = theme === 'light' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', t);
-    if (els.themeLabel) els.themeLabel.textContent = t === 'dark' ? '深色' : '淺色';
-    if (els.themeBtn) els.themeBtn.title = t === 'dark' ? '目前是深色模式，點一下切換成淺色' : '目前是淺色模式，點一下切換成深色';
+    if (els.themeLabel) els.themeLabel.textContent = t === 'dark' ? $I('theme.dark') : $I('theme.light');
+    if (els.themeBtn) els.themeBtn.title = t === 'dark' ? $I('theme.toLight') : $I('theme.toDark');
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', t === 'dark' ? '#17151c' : '#f4ede2');
     if (save) STORE.set('theme', t);
@@ -2127,7 +2222,7 @@
   function toggleTheme() {
     const next = getTheme() === 'dark' ? 'light' : 'dark';
     applyTheme(next);
-    toast(next === 'dark' ? '🌙 已切換到深色模式' : '☀️ 已切換到淺色模式');
+    toast(next === 'dark' ? '🌙 已切換到深色模式' : '☀️ 已切換到淺色模式', { key: next === 'dark' ? 'toast.themeDark' : 'toast.themeLight' });
     // 紙邊的柔光跟紙張本身不變，但外框陰影要跟著調整
     state.sparkDirty = true;
   }
@@ -2148,25 +2243,31 @@
       b.style.setProperty('--c2', p.c2);
       b.dataset.id = p.id;
       b.dataset.edge = state.paper.edge;
-      b.title = p.name;
+      b.title = $I('paper.white');
       b.setAttribute('role', 'option');
       b.setAttribute('aria-label', p.name);
-      b.innerHTML = `<span class="sheet"></span>` + (state.paper.edge !== 'plain' ? `<span class="flag">${state.paper.edge === 'gold' ? '金' : '雷'}</span>` : '');
+      b.innerHTML = `<span class="sheet"></span>` + (state.paper.edge !== 'plain'
+        ? `<span class="flag" title="${escapeHtml($I(state.paper.edge === 'gold' ? 'edge.gold' : 'edge.laser'))}">${state.paper.edge === 'gold' ? 'Au' : 'Holo'}</span>`
+        : '');
       els.paperGrid.appendChild(b);
     }
     $('.paper-chip-label')?.remove();
     const lbl = document.createElement('p');
     lbl.className = 'paper-chip-label';
-    lbl.textContent = `${paperOf(state.paper.bg).name} · ${PAPER_SIZES[state.paper.size].label}`;
+    lbl.textContent = `${$I('paper.white')} · ${PAPER_SIZES[state.paper.size].label}`;
     els.paperGrid.appendChild(lbl);
   }
 
   function selectEdge(edge) {
     state.paper.edge = edge;
-    $$('.paper-chip').forEach((el) => { el.dataset.edge = edge; });
+    $$('.paper-chip').forEach((el) => {
+      el.dataset.edge = edge;
+      const flag = el.querySelector('.flag');
+      if (flag) flag.textContent = edge === 'gold' ? 'Au' : 'Holo';
+    });
     $$('.edge-card').forEach((el) => el.setAttribute('aria-checked', String(el.dataset.edge === edge)));
     els.hueRow.hidden = edge !== 'laser';
-    els.hueShiftBtn.textContent = state.hueShifting ? '■ 停止' : '▶ 流動';
+    els.hueShiftBtn.textContent = state.hueShifting ? $I('edge.stop') : $I('edge.flow');
     buildSparks(state.render.W, state.render.H, state.paper, state.render.rad);
     renderFx(state.t);
     renderPaperGrid();
@@ -2228,7 +2329,7 @@
     });
     els.hueShiftBtn.addEventListener('click', () => {
       state.hueShifting = !state.hueShifting;
-      els.hueShiftBtn.textContent = state.hueShifting ? '■ 停止' : '▶ 流動';
+      els.hueShiftBtn.textContent = state.hueShifting ? $I('edge.stop') : $I('edge.flow');
       if (state.hueShifting && state.paper.edge !== 'laser') selectEdge('laser');
     });
     setInterval(() => {
@@ -2302,7 +2403,7 @@
     const hex = typed || normalizeHex(pickerHex) || '#000000';
     setColor(hex);
     closeModal('pickerModal');
-    toast(`已選用「${colorName(hex)}」${hex.toUpperCase()}`);
+    toast($I('toast.picked', { name: colorName(hex), hex: hex.toUpperCase() }));
   }
   function bindColorPicker() {
     els.pickerBtn.addEventListener('click', openColorPicker);
@@ -2368,6 +2469,14 @@
     });
     // 記錄 shortcut 提示文字
     const keys = { pencil: '1', watercolor: '2', highlight: '3', pen: '4', goldpen: '6', eraser: '5' };
+    const keyOfTool = { pencil: 'tool.pencil', watercolor: 'tool.watercolor', highlight: 'tool.highlight', pen: 'tool.pen', goldpen: 'tool.goldpen', eraser: 'tool.eraser' };
+    const refreshToolTitles = () => {
+      $$('.tool').forEach((el) => {
+        el.setAttribute('title', $I('title.tool', { name: $I(keyOfTool[el.dataset.tool]), n: keys[el.dataset.tool] }));
+      });
+    };
+    refreshToolTitles();
+    document.addEventListener('cp:langchange', refreshToolTitles);
     $$('.tool').forEach((el) => {
       const k = document.createElement('kbd');
       k.textContent = keys[el.dataset.tool];
@@ -2377,7 +2486,7 @@
 
   function updateProgress() {
     const n = state.strokes.length;
-    els.progressText.textContent = `${n} 筆`;
+    els.progressText.textContent = isEN() ? `${n} stroke${n === 1 ? '' : 's'}` : `${n} 筆`;
     const pct = clamp(Math.round((n % 40) / 40 * 100) + (n >= 40 ? 100 : 0), 0, 100);
     els.progressBar.style.width = Math.min(100, Math.max(2, pct)) + '%';
     updateUndoButtons();
@@ -2388,7 +2497,7 @@
     // 剛剛按過重置時，「復原」要能把重置前的畫救回來
     const canUndoReset = !!(state.lastReset && state.lastReset.length && state.strokes.length === 0);
     els.undoBtn.disabled = !mine && !canUndoReset;
-    els.undoBtn.title = canUndoReset ? '還原重置前的畫 (Ctrl+Z)' : '復原 (Ctrl+Z)';
+    els.undoBtn.title = canUndoReset ? $I('title.undoReset') : $I('title.undo');
     els.redoBtn.disabled = !state.undone.length;
   }
 
@@ -2443,9 +2552,9 @@
   function showSelection(ids) {
     state.selection.ids = new Set(ids);
     els.selBar.classList.add('show');
-    els.selBar.innerHTML = `<span>已選取 <b>${ids.length}</b> 筆</span>
-      <button class="btn btn-sm" id="selMoveBtn">✥ 搬移</button>
-      <button class="btn btn-ghost btn-sm" id="selCancelBtn">取消</button>`;
+    els.selBar.innerHTML = `<span>${isEN() ? 'Selected' : '已選取'} <b>${ids.length}</b> ${isEN() ? 'stroke(s)' : '筆'}</span>
+      <button class="btn btn-sm" id="selMoveBtn">${escapeHtml($I('select.move'))}</button>
+      <button class="btn btn-ghost btn-sm" id="selCancelBtn">${escapeHtml($I('modal.cancel'))}</button>`;
     $('#selMoveBtn').addEventListener('click', beginMoveSelection);
     $('#selCancelBtn').addEventListener('click', () => {
       state.selection.moving = false;
@@ -2466,7 +2575,7 @@
     state.selection.moving = false;
     els.inkCanvas.style.cursor = state.tool === 'eraser' ? 'cell' : 'crosshair';
     const moveBtn = $('#selMoveBtn');
-    if (moveBtn) moveBtn.textContent = '✥ 搬移';
+    if (moveBtn) moveBtn.textContent = $I('select.move');
   }
 
   function bindSelection() {
@@ -2577,26 +2686,24 @@
     if (!els.roomCardTitle || !els.roomCardDesc) return;
     if (online) {
       const count = state.others.size + 1;
-      els.roomCardTitle.textContent = `雙人房間 ${state.room.code}`;
+      els.roomCardTitle.textContent = isEN() ? `Two-person room ${state.room.code}` : `雙人房間 ${state.room.code}`;
       els.roomCardDesc.textContent = count >= 2
-        ? '你們兩個都在同一個房間裡了，可以一起畫、聊天，或交換色紙。'
-        : `目前只有你在這裡（${count}/2）。把房間號 ${state.room.code} 或邀請連結傳給朋友，對方就能進來一起畫。`;
+        ? $I('room.bothHere')
+        : $I('room.onlyYou', { n: count, code: state.room.code });
       if (els.twoPersonNote) {
-        els.twoPersonNote.textContent = count >= 2
-          ? '🔒 雙人房間已滿（2/2）。'
-          : '🔒 雙人房間：只有拿到房間號的人才能進入，最多 2 個人。';
+        els.twoPersonNote.textContent = count >= 2 ? $I('room.full') : $I('room.lock');
       }
       els.roomForm.hidden = true;
       els.roomActions.hidden = false;
       els.roomShare.hidden = false;
       els.shareLinkInput.value = shareUrl(state.room.code);
     } else {
-      els.roomCardTitle.textContent = state.room ? '正在重新連線…' : '聯機一起畫';
+      els.roomCardTitle.textContent = state.room ? $I('mode.reconnecting') : $I('room.title');
       els.roomCardDesc.textContent = state.room
-        ? '連線中斷了，正在嘗試恢復。你的夥伴們也在等你回來。'
+        ? $I('room.reconnecting')
         : HAS_BACKEND
-          ? '建立一間雙人房間後，把 6 位房間號或邀請連結傳給朋友。對方輸入房間號就能進來，房間最多 2 個人。'
-          : '目前是 GitHub Pages 靜態版：畫畫、紙邊、存圖都可用，但聯機與交換色紙需要另外的伺服器（在本機跑 `node server.js` 就會開啟）。';
+          ? $I('room.desc')
+          : $I('toast.staticHost');
       els.roomForm.hidden = false;
       els.roomActions.hidden = true;
       els.roomShare.hidden = true;
@@ -2613,7 +2720,8 @@
     els.copyCodeBtn.addEventListener('click', async () => {
       if (!state.room) return;
       const ok = await copyText(state.room.code);
-      toast(ok ? `房間代碼 ${state.room.code} 已複製` : '複製失敗，請手動記下代碼');
+      if (ok) toast($I('toast.copiedCode', { code: state.room.code }), { key: 'toast.copiedCode', vars: { code: state.room.code } });
+      else toast('複製失敗，請手動記下房間號', { key: 'toast.copyFail' });
     });
     els.copyLinkBtn.addEventListener('click', copyShareLink);
     els.copyShareBtn.addEventListener('click', copyShareLink);
@@ -2777,7 +2885,9 @@
     els.nickInput.value = state.self.name || STORE.get('nick', '');
     els.joinCodeInput2.value = state.pendingJoin;
     els.joinCodeField.hidden = !state.pendingJoin;
-    $('#joinTitle').textContent = state.pendingJoin ? `加入房間 ${state.pendingJoin}` : '和朋友一起畫';
+    $('#joinTitle').textContent = state.pendingJoin
+      ? (isEN() ? `Join room ${state.pendingJoin}` : `加入房間 ${state.pendingJoin}`)
+      : $I('modal.join.title');
     renderJoinModalError();
     openModal('joinModal');
     lockCreateButtons(true);
@@ -2832,14 +2942,13 @@
     saveSelf();
     state.pendingJoin = '';
     state.conn.joining = 'new';
-    els.landingNote.textContent = '正在開房間…';
-    connect({
-      createRoom: true,
-      onReady: (err) => {
-        if (err) { toast(err); els.landingNote.textContent = '無法連上伺服器'; return; }
-        els.landingNote.textContent = '';
-        hideLanding();
-      },
+    els.landingNote.textContent = $I('landing.creating');
+    connect({ createRoom: true });
+    // 等到真的加入房間（joined）才關掉落地頁
+    waitForConnection().then((ok) => {
+      els.landingNote.textContent = '';
+      if (ok) hideLanding();
+      else { toast($I('toast.noServer'), { key: 'toast.noServer' }); els.landingNote.textContent = ''; }
     });
   }
 
@@ -2848,10 +2957,10 @@
     if (!state.self.name) { state.pendingIntent = 'join'; openJoinModal(code); return; }
     hideLanding();
     state.conn.joining = code;
-    els.roomLabel.textContent = `正在加入 ${code}…`;
-    connect({
-      joinCode: code,
-      onReady: (err) => { if (err) toast(err); },
+    els.roomLabel.textContent = $I('mode.joining', { code });
+    connect({ joinCode: code });
+    waitForConnection().then((ok) => {
+      if (!ok) toast($I('toast.noServer'), { key: 'toast.noServer' });
     });
   }
 
@@ -2865,7 +2974,7 @@
     list.innerHTML = '';
     const online = !!state.room && state.conn.status === 'online';
     els.peerCount.textContent = online ? String(state.others.size + 1) : String(1);
-    const selfLi = personLi({ id: state.self.id, name: state.self.name || '你', color: state.self.color, strokeCount: state.strokes.filter((s) => s.by === state.self.id).length, online: true, self: true });
+    const selfLi = personLi({ id: state.self.id, name: state.self.name || $I('room.you'), color: state.self.color, strokeCount: state.strokes.filter((s) => s.by === state.self.id).length, online: true, self: true });
     list.appendChild(selfLi);
     if (online) {
       const sorted = [...state.others.values()].sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
@@ -2874,7 +2983,7 @@
         if (m.online) {
           const gift = document.createElement('button');
           gift.className = 'gift';
-          gift.textContent = '🎁 交換';
+          gift.textContent = $I('room.gift');
           gift.addEventListener('click', () => openExchange(m.id));
           p.appendChild(gift);
         }
@@ -2883,7 +2992,7 @@
     } else {
       const li = document.createElement('li');
       li.className = 'person';
-      li.innerHTML = `<div class="avatar" style="background:#444">+</div><div class="who"><b>邀請朋友</b><small>開啟房間或輸入代碼</small></div>`;
+      li.innerHTML = `<div class="avatar" style="background:#444">+</div><div class="who"><b>${escapeHtml($I('room.invite'))}</b><small>${escapeHtml($I('room.invite.desc'))}</small></div>`;
       list.appendChild(li);
     }
     renderExchangePeople();
@@ -2893,14 +3002,14 @@
   function personLi(m) {
     const li = document.createElement('li');
     li.className = 'person';
-    const name = m.name || '未命名';
+    const name = m.name || $I('gallery.untitled');
     const total = state.strokes.length || 1;
     const pct = m.self ? Math.round((state.strokes.filter((s) => s.by === state.self.id).length / total) * 100) : Math.round(((m.strokeCount || 0) / total) * 100);
     li.innerHTML = `
       <div class="avatar" style="background:${m.color}">${initial(name)}</div>
       <div class="who">
-        <b>${escapeHtml(name)}${m.self ? '（你）' : ''}</b>
-        <small>${m.online ? '線上' : '暫時離開'}${!m.self ? ` · ${pct}% 的筆跡` : ''}</small>
+        <b>${escapeHtml(name)}${m.self ? escapeHtml($I('room.person.self')) : ''}</b>
+        <small>${m.online ? escapeHtml($I('room.person.online')) : escapeHtml($I('room.person.away'))}${!m.self ? escapeHtml(' · ' + $I('room.person.strokes', { pct })) : ''}</small>
         <div class="done" style="--c:${m.color}"><i style="width:${clamp(pct, 2, 100)}%"></i></div>
       </div>`;
     return li;
@@ -2971,6 +3080,33 @@
       badge.textContent = String(chatItems.length - trainSeen);
     }
   }
+  function rebuildChatLog() {
+    if (!els.chatLog) return;
+    const log = els.chatLog;
+    log.innerHTML = '';
+    els.chatEmpty.hidden = chatItems.length > 0;
+    for (const msg of chatItems) {
+      const el = document.createElement('div');
+      if (msg.kind === 'sys') {
+        el.className = 'msg system';
+        el.innerHTML = `<div class="bubble">${escapeHtml(tMsg(msg.text || ''))}</div>`;
+      } else {
+        el.className = 'msg' + (msg.by === state.self.id ? ' mine' : '');
+        el.innerHTML = `<div class="avatar" style="background:${msg.color || '#999'}">${initial(msg.name)}</div>
+          <div class="bubble-wrap"><div class="meta">${escapeHtml(msg.name || '')} · ${timeStr(msg.ts)}</div><div class="bubble">${escapeHtml(msg.text)}</div></div>`;
+      }
+      log.appendChild(el);
+    }
+    if (!chatItems.length) {
+      const empty = document.createElement('div');
+      empty.className = 'chat-empty';
+      empty.textContent = $I('chat.empty');
+      log.appendChild(empty);
+      els.chatEmpty = empty;
+    }
+    scrollChat();
+  }
+
   function systemChat(text) {
     pushChat({ kind: 'sys', id: uid('sys'), text, ts: Date.now() });
   }
@@ -3031,10 +3167,10 @@
   function renderGallery() {
     const list = getGalleries();
     if (state.offerTo) {
-      els.galleryDesc.innerHTML = `請挑一張回禮給 <b style="color:#f2d48a">${escapeHtml(state.offerTo.name)}</b>（點一下縮圖就會送出）`;
+      els.galleryDesc.innerHTML = $I('gallery.pickGift', { name: escapeHtml(state.offerTo.name) });
       els.galleryDesc.dataset.offer = '1';
     } else if (els.galleryDesc.dataset.offer) {
-      els.galleryDesc.textContent = '你與朋友的作品會收藏在這裡，可以隨時拿回來看或下載。';
+      els.galleryDesc.textContent = $I('gallery.desc');
       delete els.galleryDesc.dataset.offer;
     }
     els.galleryGrid.innerHTML = '';
@@ -3045,13 +3181,13 @@
       li.className = 'g-item';
       const from = it.from || (it.by !== state.self.name ? it.by : '');
       li.innerHTML = `
-        <div class="g-thumb" title="點一下拿回畫布重畫">
+        <div class="g-thumb" title="${escapeHtml($I('gallery.download'))}">
           <img alt="${escapeHtml(it.title)}" src="${it.image}" />
-          <span class="tag ${from ? 'from' : ''}">${from ? '🎁 ' + escapeHtml(from) : '🖼 我的'}</span>
+          <span class="tag ${from ? 'from' : ''}">${from ? '🎁 ' + escapeHtml(from) : escapeHtml($I('gallery.mine'))}</span>
         </div>
         <p class="g-name">${escapeHtml(it.title)}</p>
-        <p class="g-by">${escapeHtml(it.by)} · ${new Date(it.ts).toLocaleDateString()}</p>
-        <button class="g-del" title="刪除">✕</button>`;
+        <p class="g-by">${escapeHtml(it.by)} · ${new Date(it.ts).toLocaleDateString(isEN() ? 'en-GB' : 'zh-HK')}</p>
+        <button class="g-del" title="${escapeHtml($I('gallery.delete'))}">✕</button>`;
       li.querySelector('.g-thumb').addEventListener('click', () => loadFromGallery(it));
       li.querySelector('.g-del').addEventListener('click', () => {
         setGalleries(list.filter((x) => x.id !== it.id));
@@ -3161,8 +3297,10 @@
     state.exchangeTarget = toId || (others.length === 1 ? others[0].id : null);
     const preview = exportPng(360);
     els.exchangePreview.innerHTML = `<img alt="你的色紙" src="${preview}" />`;
-    els.exchangeMeta.textContent = `你要送出：${paperOf(state.paper.bg).name}《${state.self.name || '你的'}色紙》`;
-    els.exchangeSub.textContent = '送出後，你會收到一張對方從畫廊挑選的色紙作為回禮。';
+    els.exchangeMeta.textContent = $I('modal.exchange.meta', {
+      name: isEN() ? `${state.self.name || 'your'} sheet` : `${paperOf(state.paper.bg).name}《${state.self.name || '你的'}色紙》`,
+    });
+    els.exchangeSub.textContent = $I('modal.exchange.sub');
     renderExchangePeople();
     openModal('exchangeModal');
   }
@@ -3175,7 +3313,7 @@
       const li = document.createElement('li');
       li.className = 'person selectable' + (state.exchangeTarget === m.id ? ' sel' : '');
       li.innerHTML = `<div class="avatar" style="background:${m.color}">${initial(m.name)}</div>
-        <div class="who"><b>${escapeHtml(m.name)}</b><small>${m.strokeCount || 0} 筆</small></div>`;
+        <div class="who"><b>${escapeHtml(m.name)}</b><small>${escapeHtml($I('room.person.count', { n: m.strokeCount || 0 }))}</small></div>`;
       li.addEventListener('click', () => {
         state.exchangeTarget = m.id;
         renderExchangePeople();
@@ -3183,7 +3321,7 @@
       els.exchangePeople.appendChild(li);
     }
     els.exchangeSendBtn.disabled = !state.exchangeTarget;
-    els.exchangeHint.textContent = list.length ? '' : '目前沒有其他人在線。';
+    els.exchangeHint.textContent = list.length ? '' : $I('room.empty');
   }
 
   function sendExchange() {
@@ -3198,7 +3336,7 @@
     state.incoming.set(req.id, { ...req, status: 'pending' });
     renderIncoming();
     if ($('.tab-panel[data-panel="friends"]').classList.contains('active')) switchTab('friends');
-    else toast(`${req.fromName} 想和你交換色紙 🎁`, { gold: true });
+    else toast(isEN() ? `${req.fromName} wants to trade paper 🎁` : `${req.fromName} 想和你交換色紙 🎁`, { gold: true });
     const overlay = state.room && state.conn.status === 'online';
     // 視窗沒開著、而且目前只有這一則請求時，直接跳出來給對方看
     const modalEl = document.getElementById('incomingModal');
@@ -3230,13 +3368,15 @@
     const req = state.incoming.get(id);
     if (!req) return;
     state.currentIncoming = id;
-    els.incomingTitle.textContent = `${req.fromName} 想和你交換色紙`;
+    els.incomingTitle.textContent = isEN()
+      ? `${req.fromName} wants to trade paper`
+      : `${req.fromName} 想和你交換色紙`;
     els.incomingBody.innerHTML = `
       <div class="offer-card">
-        <div class="preview-wrap">${req.fromImage ? `<img alt="對方送的色紙" src="${req.fromImage}" />` : '<div style="display:grid;place-items:center;height:100%;color:#888;font-size:12px">（無預覽）</div>'}</div>
+        <div class="preview-wrap">${req.fromImage ? `<img alt="paper" src="${req.fromImage}" />` : `<div class="no-preview">${escapeHtml($I('exchange.noPreview'))}</div>`}</div>
         <div class="preview-meta">
-          <p><b>${escapeHtml(req.fromName)}</b> 送你一張色紙。</p>
-          <p class="muted">收下之後，系統會請你從自己的畫廊挑一張回禮；對方想要的其實是「你自己畫的東西」。</p>
+          <p><b>${escapeHtml(req.fromName)}</b> ${escapeHtml($I('exchange.sendsYou'))}</p>
+          <p class="muted">${escapeHtml($I('exchange.acceptHint'))}</p>
         </div>
       </div>`;
     openModal('incomingModal');
@@ -3250,7 +3390,7 @@
     const mine = getGalleries().filter((g) => !g.from);
     const pick = mine.length ? mine[0] : null;
     if (req.fromImage) {
-      publishToGallery([{ image: req.fromImage, title: `${req.fromName}的交換色紙`, by: req.fromName, from: req.fromName, to: state.self.name }]);
+      publishToGallery([{ image: req.fromImage, title: isEN() ? `Paper from ${req.fromName}` : `${req.fromName}的交換色紙`, by: req.fromName, from: req.fromName, to: state.self.name }]);
       floatPaper(req.fromImage);
     }
     // 2. 挑一張回禮
@@ -3264,14 +3404,14 @@
     } else {
       state.offerTo = { id: req.from, name: req.fromName };
       switchTab('gallery');
-      toast(`你的畫廊還是空的。先畫一張，或從畫廊挑一張回禮給 ${req.fromName}。`, { gold: true });
+      toast($I('toast.noGallery', { name: req.fromName }), { gold: true });
     }
   }
 
   function sendOffer(to, item) {
     const image = item.image;
     wsSend('exchange-offer', { to, image, title: item.title });
-    toast(`已把「${item.title}」作為回禮送出 ✨`, { gold: true });
+    toast($I('toast.gifted', { title: item.title }), { gold: true });
   }
 
   function declineRequest(id) {
@@ -3288,18 +3428,18 @@
     if (!offer) return;
     const html = `
       <div class="offer-card">
-        <div class="preview-wrap">${offer.image ? `<img alt="回禮色紙" src="${offer.image}" />` : '<div style="display:grid;place-items:center;height:100%;color:#888;font-size:12px">（無圖片）</div>'}</div>
+        <div class="preview-wrap">${offer.image ? `<img alt="paper" src="${offer.image}" />` : `<div class="no-preview">${escapeHtml($I('exchange.noPreview'))}</div>`}</div>
         <div class="preview-meta">
-          <p><b style="color:${offer.fromColor}">${escapeHtml(offer.fromName)}</b> 回了你一張色紙：<br/><b>《${escapeHtml(offer.title || '未命名')}》</b></p>
-          <p class="muted">這張會直接放進你的畫廊收藏。</p>
+          <p><b style="color:${offer.fromColor}">${escapeHtml(offer.fromName)}</b> ${escapeHtml($I('exchange.giftBack'))}<br/><b>《${escapeHtml(offer.title || $I('gallery.untitled'))}》</b></p>
+          <p class="muted">${escapeHtml($I('exchange.giftSaved'))}</p>
         </div>
       </div>`;
-    els.incomingTitle.textContent = `${offer.fromName} 的回禮`;
+    els.incomingTitle.textContent = isEN() ? `A return gift from ${offer.fromName}` : `${offer.fromName} 的回禮`;
     els.incomingBody.innerHTML = html;
-    els.acceptOfferedBtn.textContent = '收下回禮';
-    els.declineOfferedBtn.textContent = '關閉';
+    els.acceptOfferedBtn.textContent = $I('exchange.acceptGift');
+    els.declineOfferedBtn.textContent = $I('modal.close');
     els.acceptOfferedBtn.onclick = async () => {
-      await publishToGallery([{ image: offer.image, title: offer.title || '交換來的色紙', by: offer.fromName, from: offer.fromName, to: state.self.name }]);
+      await publishToGallery([{ image: offer.image, title: offer.title || $I('exchange.traded'), by: offer.fromName, from: offer.fromName, to: state.self.name }]);
       if (offer.image) floatPaper(offer.image);
       closeModal('incomingModal');
       switchTab('gallery');
@@ -3311,9 +3451,9 @@
   function openExchangePreview(it) {
     els.incomingTitle.textContent = it.title;
     els.incomingBody.innerHTML = `<div class="offer-card"><div class="preview-wrap"><img alt="" src="${it.image}" /></div>
-      <div class="preview-meta"><p>${escapeHtml(it.from ? `來自 ${it.from} 的交換色紙` : '你的收藏')}</p><p class="muted">${new Date(it.ts).toLocaleString()}</p></div></div>`;
-    els.acceptOfferedBtn.textContent = '下載這張';
-    els.declineOfferedBtn.textContent = '關閉';
+      <div class="preview-meta"><p>${escapeHtml(it.from ? $I('exchange.from', { name: it.from }) : $I('exchange.mine'))}</p><p class="muted">${new Date(it.ts).toLocaleString(isEN() ? 'en-GB' : 'zh-HK')}</p></div></div>`;
+    els.acceptOfferedBtn.textContent = $I('gallery.download');
+    els.declineOfferedBtn.textContent = $I('modal.close');
     els.acceptOfferedBtn.onclick = () => {
       const a = document.createElement('a');
       a.href = it.image;
@@ -3487,12 +3627,14 @@
     const sizeRow = document.createElement('div');
     sizeRow.className = 'hue-row';
     sizeRow.style.marginTop = '12px';
-    sizeRow.innerHTML = `<label style="grid-column:1/-1"><span>紙張尺寸</span></label><div class="sizes" style="grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap"></div>`;
+    sizeRow.innerHTML = `<label style="grid-column:1/-1"><span>${escapeHtml($I('canvas.paperSize'))}</span></label><div class="sizes" style="grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap"></div>`;
     const sizes = sizeRow.querySelector('.sizes');
     for (const [key, v] of Object.entries(PAPER_SIZES)) {
       const b = document.createElement('button');
       b.className = 'btn btn-sm' + (state.paper.size === key ? ' btn-primary' : ' btn-ghost');
-      b.textContent = v.label;
+      b.dataset.sizeKey = { B4: 'size.B4', A5: 'size.A5', SQ: 'size.SQ', B6: 'size.B6', WL: 'size.WL', L: 'size.L', CD: 'size.CD' }[key] || key;
+      b.textContent = $I(b.dataset.sizeKey);
+      b.dataset.i18nSizeKey = b.dataset.sizeKey;
       b.dataset.size = key;
       b.addEventListener('click', () => {
         selectSize(key);
@@ -3548,13 +3690,13 @@
           hideLanding();
           setTimeout(() => joinRoom(ROOM_FROM_URL), 120);
         } else {
-          els.landingNote.textContent = `朋友邀請你加入房間 ${roomCode.toUpperCase()}，先取一個暱稱吧！`;
+          els.landingNote.textContent = $I('welcome.invite', { code: roomCode.toUpperCase() });
           setTimeout(() => { state.pendingIntent = 'join'; openJoinModal(roomCode.toUpperCase()); }, 300);
         }
       } else {
         els.landingNote.textContent = !HAS_BACKEND
-        ? '這是靜態展示版：可以選紙、塗鴉、存圖；聯機與交換色紙需要另外的伺服器。'
-        : state.self.name ? `歡迎回來，${state.self.name}！` : '先選一張色紙，再決定要不要和朋友一起畫。';
+          ? $I('toast.staticHost')
+          : state.self.name ? $I('welcome.back', { name: state.self.name }) : $I('welcome.start');
       }
     }
 
@@ -3565,9 +3707,44 @@
     }
   }
 
+  // 語言切換時重繪所有動態文字
+  document.addEventListener('cp:langchange', () => {
+    try {
+      updateConnUI();
+      renderRoomCard();
+      renderPeople();
+      renderGallery();
+      renderIncoming();
+      renderPaperGrid();
+      applyTheme(getTheme(), { save: false });
+      updateProgress();
+      updateUndoButtons();
+      if (connLabelKey) els.roomLabel.textContent = $I(connLabelKey, connLabelVars);
+      $$('.sizes .btn').forEach((b) => { if (b.dataset.i18nSizeKey) b.textContent = $I(b.dataset.i18nSizeKey); });
+      els.hueShiftBtn.textContent = state.hueShifting ? $I('edge.stop') : $I('edge.flow');
+      if (!landingHidden && els.landingNote) {
+        els.landingNote.textContent = state.room || HAS_BACKEND ? '' : $I('toast.staticHost');
+      }
+      // 聊天紀錄：使用者輸入的內容不翻譯，只重繪系統訊息與時間格式
+      rebuildChatLog();
+    } catch (err) {
+      console.warn('語言切換重繪失敗', err);
+    }
+  });
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+  // 初始化完成後，如果目前是英文（或之後被切換），請 site.js 已套用的語言再通知一次，
+  // 讓連線狀態等動態文字對到正確語言。
+  setTimeout(() => document.dispatchEvent(new CustomEvent('cp:langchange', { detail: { lang: window.CP_I18N ? window.CP_I18N.current() : 'zh' } })), 0);
 
   // 給自動化測試用的小 API
   window.__coloredPaper = { state, exportPng, renderFx, PAPERS, paintStroke, get ctxInk() { return ctxInk; }, get liveBuf() { return liveBuf; }, get draw() { return draw; }, renderInk };
+  // 給 studio.js / site.js 重用的純繪圖函式
+  Object.assign(CP_ENGINE, {
+    drawEdge, getPaperFill, buildSparks, paintStroke, getPad, resetPaintCtx,
+    getSparks: () => state.sparks,
+    setSparks: (arr) => { state.sparks = arr; },
+    hashStr, mulberry32, mix, hexToRgb, luminance,
+  });
 })();

@@ -22,7 +22,7 @@ const apiBase = (process.env.PAGES_BACKEND || '').trim().replace(/\/$/, '');
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
 
-const files = ['index.html', 'styles.css', 'app.js', 'theme-init.js'];
+const files = ['index.html', 'styles.css', 'app.js', 'theme-init.js', 'i18n.js', 'site.js', 'studio.js'];
 for (const f of files) {
   const src = path.join(root, f);
   if (!fs.existsSync(src)) throw new Error(`找不到 ${f}`);

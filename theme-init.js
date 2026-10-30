@@ -10,4 +10,14 @@
     t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
   }
   document.documentElement.setAttribute('data-theme', t);
+  // 語言：在第一次繪製前就決定（避免畫面先出現另一種語言）——以 <html data-lang> 給 i18n.js 讀
+  var lang = null;
+  try {
+    var rawLang = localStorage.getItem('cp:lang');
+    lang = rawLang ? JSON.parse(rawLang) : null;
+  } catch (e) { lang = null; }
+  if (lang !== 'zh' && lang !== 'en') {
+    lang = String(navigator.language || 'zh').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
+  }
+  document.documentElement.setAttribute('data-lang', lang);
 })();
