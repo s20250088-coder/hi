@@ -2604,11 +2604,11 @@
   }
 
   function bindRoom() {
-    els.joinBtn.addEventListener('click', () => joinFromInput());
+    els.joinBtn.addEventListener('click', () => { state.pendingIntent = 'join'; joinFromInput(); });
     els.joinCodeInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); joinFromInput(); }
     });
-    els.landingRoom.addEventListener('click', () => openJoinModal());
+    els.landingRoom.addEventListener('click', () => { state.pendingIntent = 'create'; openJoinModal(); });
     els.landingNew.addEventListener('click', () => hideLanding());
     els.copyCodeBtn.addEventListener('click', async () => {
       if (!state.room) return;
@@ -2627,6 +2627,8 @@
     els.createRoomBtn.addEventListener('click', async () => {
       // 純靜態版（GitHub Pages）沒有伺服器可以開房間，先清楚告訴使用者
       if (!HAS_BACKEND) { backendMissing(); return; }
+      // 暱稱視窗還開著：使用者應該先在視窗裡確認，不要在背後又開一間房
+      if (!els.joinModal.hidden) return;
       if (state.room) {
         if (!confirm('你已經在房間裡了，要離開並建立新的雙人房間嗎？')) return;
         if (state.conn.status === 'online') {
@@ -2642,7 +2644,7 @@
     els.joinCodeInput.addEventListener('input', () => {
       els.joinCodeInput.value = els.joinCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
     });
-    if (els.chatJoinBtn) els.chatJoinBtn.addEventListener('click', () => openJoinModal());
+    if (els.chatJoinBtn) els.chatJoinBtn.addEventListener('click', () => { state.pendingIntent = 'join'; openJoinModal(); });
     els.fitBtn.addEventListener('click', () => resetCanvas());
     els.nickInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinFromModal(); });
     els.joinCodeInput2.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinFromModal(); });
@@ -2737,6 +2739,14 @@
     toast('已重置畫布，可以重新開始了');
   }
 
+  /** 暱稱視窗開著時，鎖住背後的「建立雙人房間」按鈕，避免重複開房 / 被誤按 */
+  function lockCreateButtons(locked) {
+    const btn = document.getElementById('createRoomBtn');
+    if (!btn) return;
+    btn.disabled = locked;
+    btn.title = locked ? '請先在視窗中輸入暱稱' : '';
+  }
+
   async function copyShareLink() {
     if (!state.room) return;
     const link = shareUrl(state.room.code);
@@ -2749,6 +2759,7 @@
     if (!code) { toast('想開房間的話，按下面的「建立雙人房間」'); els.createRoomBtn.focus(); return; }
     if (code.length !== 6) { toast('房間號是 6 位英數字，例如 K3M7QF'); return; }
     // 還沒有暱稱就先問暱稱（房間號會被記住，確認後直接加入）
+    state.pendingIntent = 'join';
     if (!state.self.name) { openJoinModal(code); return; }
     joinRoom(code);
   }
@@ -2760,12 +2771,16 @@
   function openJoinModal(pendingJoin = '') {
     state.joinError = '';
     state.pendingJoin = /^[A-Z0-9]{6}$/i.test(pendingJoin || '') ? pendingJoin.toUpperCase() : '';
+    // 使用者按的是「建立雙人房間」還是「加入」？確認暱稱後照原本的意圖做
+    // 有指定房間號就是「加入」；否則依呼叫端設定的意圖（建立房間 / 加入），預設「建立房間」
+    state.pendingIntent = state.pendingJoin ? 'join' : (state.pendingIntent || 'create');
     els.nickInput.value = state.self.name || STORE.get('nick', '');
     els.joinCodeInput2.value = state.pendingJoin;
     els.joinCodeField.hidden = !state.pendingJoin;
     $('#joinTitle').textContent = state.pendingJoin ? `加入房間 ${state.pendingJoin}` : '和朋友一起畫';
     renderJoinModalError();
     openModal('joinModal');
+    lockCreateButtons(true);
     setTimeout(() => (state.pendingJoin ? els.joinConfirmBtn : els.nickInput).focus(), 50);
   }
   function renderJoinModalError() {
@@ -2793,15 +2808,28 @@
     state.joinError = '';
     const typed = els.joinCodeField.hidden ? '' : els.joinCodeInput2.value.trim().toUpperCase();
     const code = typed || state.pendingJoin || '';
+    const intent = state.pendingIntent || (code ? 'join' : 'create');
     state.pendingJoin = '';
+    state.pendingIntent = '';
     closeModal('joinModal');
+    lockCreateButtons(false);
     if (code) joinRoom(code);
-    else createRoomFlow();
+    else if (intent === 'create') createRoomFlow(state.self.name);
+    else openJoinModal();
   }
 
-  function createRoomFlow() {
+  function createRoomFlow(confirmedName) {
     if (!HAS_BACKEND) { backendMissing(); return; }
-    if (!state.self.name) { openJoinModal(); return; }
+    // 點擊的當下就核對暱稱，而不是等 async 之後才檢查（避免「先開一間、回來又開一間」）
+    const name = String(confirmedName || '').trim() || String(state.self.name || '').trim();
+    if (!name) {
+      state.pendingIntent = 'create';
+      openJoinModal();
+      return;
+    }
+    state.self.name = name.slice(0, 16);
+    STORE.set('nick', state.self.name);
+    saveSelf();
     state.pendingJoin = '';
     state.conn.joining = 'new';
     els.landingNote.textContent = '正在開房間…';
@@ -2817,7 +2845,7 @@
 
   function joinRoom(code) {
     if (!HAS_BACKEND) { backendMissing(); return; }
-    if (!state.self.name) { openJoinModal(); return; }
+    if (!state.self.name) { state.pendingIntent = 'join'; openJoinModal(code); return; }
     hideLanding();
     state.conn.joining = code;
     els.roomLabel.textContent = `正在加入 ${code}…`;
@@ -2828,8 +2856,7 @@
   }
 
   function checkRoomInUrl() {
-    const url = new URL(location.href);
-    return url.searchParams.get('room');
+    return ROOM_FROM_URL || null;
   }
 
   /* ---- 夥伴列表 ---- */
@@ -3173,7 +3200,10 @@
     if ($('.tab-panel[data-panel="friends"]').classList.contains('active')) switchTab('friends');
     else toast(`${req.fromName} 想和你交換色紙 🎁`, { gold: true });
     const overlay = state.room && state.conn.status === 'online';
-    if (overlay && state.incoming.size === 1) openIncomingModal(req.id);
+    // 視窗沒開著、而且目前只有這一則請求時，直接跳出來給對方看
+    const modalEl = document.getElementById('incomingModal');
+    const modalOpen = modalEl && !modalEl.hidden;
+    if (overlay && !modalOpen && state.incoming.size === 1) openIncomingModal(req.id);
   }
 
   function renderIncoming() {
@@ -3331,6 +3361,7 @@
     if (!m) return;
     m.hidden = true;
     m.classList.remove('open');
+    if (id === 'joinModal') lockCreateButtons(false);
     if (id === 'incomingModal') state.currentIncoming = null;
   }
   function bindModals() {
@@ -3375,6 +3406,13 @@
 
   /* ---- 開始畫面 ---- */
   let landingHidden = false;
+  // 頁面載入時網址裡的 ?room=（只讀一次；之後就算其他分頁改了網址也不影響這一頁）
+  const ROOM_FROM_URL = (() => {
+    try {
+      const v = new URL(location.href).searchParams.get('room');
+      return v && /^[A-Z0-9]{6}$/i.test(v.trim()) ? v.trim().toUpperCase() : '';
+    } catch { return ''; }
+  })();
   function hideLanding() {
     if (landingHidden) return;
     landingHidden = true;
@@ -3405,6 +3443,8 @@
     state.savedTheme = STORE.get('theme', null);
     state.themeChosen = state.savedTheme === 'light' || state.savedTheme === 'dark';
     const savedSelf = STORE.get('self', null);
+    // 這個瀏覽器之前有沒有用過（有暱稱或身分）→ 有就直接沿用，不再每次重問暱稱
+    state.self.existed = !!((savedSelf && savedSelf.id) || STORE.get('nick', ''));
     if (savedSelf && savedSelf.id) state.self = { ...state.self, ...savedSelf };
     state.self.name = STORE.get('nick', '') || (savedSelf && savedSelf.name) || '';
     state.self.color = state.self.color || '#9cc3f0';
@@ -3493,17 +3533,23 @@
     requestAnimationFrame(frame);
 
     // 進入房間？
-    // 網址裡的 ?room= 只在「這次開啟」自動加入一次；之後（例如手動輸入其他房號）就不要再自動搶房間
-    if (!sessionStorage.getItem('cp:autoJoin')) {
-      sessionStorage.setItem('cp:autoJoin', '1');
+    // 網址裡的 ?room= 每個「分頁」只在剛開啟時自動加入一次；之後（例如手動輸入其他房號）就不要再自動搶房間。
+    // 注意：sessionStorage 在同一瀏覽器的分頁之間是「共用」的，所以不能拿它的旗標當「這個分頁」的標記，
+    // 要改用模組變數（每頁各自一份）。
+    if (!state.autoJoinDone) {
+      state.autoJoinDone = true;
       const roomCode = checkRoomInUrl();
       if (roomCode && /^[A-Z0-9]{6}$/i.test(roomCode)) {
         if (state.self.name) {
           hideLanding();
-          setTimeout(() => joinRoom(roomCode.toUpperCase()), 120);
+          setTimeout(() => joinRoom(ROOM_FROM_URL), 120);
+        } else if (state.self.existed) {
+          // 這個瀏覽器已經用過彩紙屋：直接沿用上次的暱稱進入，不用再問
+          hideLanding();
+          setTimeout(() => joinRoom(ROOM_FROM_URL), 120);
         } else {
           els.landingNote.textContent = `朋友邀請你加入房間 ${roomCode.toUpperCase()}，先取一個暱稱吧！`;
-          setTimeout(() => openJoinModal(roomCode.toUpperCase()), 300);
+          setTimeout(() => { state.pendingIntent = 'join'; openJoinModal(roomCode.toUpperCase()); }, 300);
         }
       } else {
         els.landingNote.textContent = !HAS_BACKEND

@@ -12,10 +12,10 @@ color-paper/
 ├── server.js       # 靜態檔服務 + WebSocket 房間伺服器（持久化畫廊）
 ├── scripts/build-pages.mjs  # 產生 GitHub Pages 用的靜態版（dist/）
 ├── .github/workflows/deploy-pages.yml  # 合併到 main 時自動部署
-└── test/e2e.mjs    # 多人協作的端對端測試（16 項）
+└── test/e2e.mjs    # 多人協作的端對端測試（19 項）
 ```
 
-## 啟動
+## 啟動（完整功能：聯機／聊天室／交換色紙）
 
 ```bash
 cd color-paper
@@ -26,13 +26,20 @@ node server.js --port 9090 --host 0.0.0.0
 然後瀏覽器打開 <http://localhost:8787>。
 同一個 Wi-Fi 的其他裝置（手機、平板）用你電腦的區網 IP 連進來，例如 `http://192.168.1.20:8787`。
 
-> 需要 Node.js 18 以上（用到內建 `crypto.randomInt`、global `fetch` 只在測試用到）。
+> 需要 Node.js 18 以上。伺服器啟動後會印出實際網址；用 `Ctrl + C` 停止。
 
 跑測試（伺服器要先啟動）：
 
 ```bash
 node test/e2e.mjs http://127.0.0.1:8787
 ```
+
+### 本機版與線上版的差別
+
+| 功能 | 本機 `localhost:8787` | 線上 GitHub Pages |
+|---|---|---|
+| 選紙、四種畫筆＋燙金筆、紙邊、深色模式、存圖 | ✅ | ✅ |
+| 雙人房間（房間號）、聊天室、交換色紙 | ✅ | ❌ 需要另外的伺服器（見下一節） |
 
 ## GitHub Pages
 
