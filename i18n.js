@@ -82,7 +82,7 @@
       'faq.q4': '怎麼回報問題？',
       'faq.a4': '到 GitHub 專案 s20250088-coder/hi 提出 Issue；下方的限制清單就是下一次改版的重點。',
       'footer.line': '彩紙屋 Color Paper Studio · 專題作品',
-      'footer.author': '2A 鄧苡澄 · Belllllll341',
+      'footer.author': '2A 鄧苡澄（Bellllll341）',
 
       /* ---- 工作區（原有功能） ---- */
       'theme.dark': '深色',
