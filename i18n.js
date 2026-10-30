@@ -289,7 +289,7 @@
       'cta.seeFeatures': 'See what it does',
 
       'hero.kicker': 'STUDENT PROJECT · 2026',
-      'hero.title': 'Color paper with<br /><span class="gold-text">a golden glow</span>',
+      'hero.title': 'Color paper with a<br /><span class="gold-text">golden glow</span>',
       'hero.lede': 'Color Paper Studio is a drawing studio that runs entirely in your browser. Pick a white sheet, give it a gold-foil or holographic edge, then draw with pencil, charcoal, watercolor, highlighter, ballpoint or a gold-leaf pen — draw together on the same sheet, chat, and trade artwork with a friend.',
       'hero.stat1': 'drawing tools',
       'hero.stat2': 'edge finishes',
